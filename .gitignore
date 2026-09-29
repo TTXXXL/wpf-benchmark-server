@@ -6,6 +6,10 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-data/raw/
+data/raw/*
+!data/raw/sdwpf/
+data/raw/sdwpf/*
+!data/raw/sdwpf/sdwpf_245days_v1.csv
+!data/raw/sdwpf/sdwpf_baidukddcup2022_turb_location.csv
 data/processed/
 reports/
