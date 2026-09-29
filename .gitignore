@@ -6,8 +6,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
+data/raw/
+data/processed/
 reports/

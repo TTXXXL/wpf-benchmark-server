@@ -1,7 +1,8 @@
 {
   "schema": 1,
   "managed": {
-    ".gitignore": "e6c514822d2a16172a58dbf92d05e212cdd001d2f4f8cb564c2d6282af5f620d",
+    ".gitattributes": "71bf430a5362fd27c46ef34b7e18c5371b90def8aa6afb0ce12590733f487c72",
+    ".gitignore": "f5a53a214311f77773efbe444db2c36ba67183205022d44dd127344e9f721cd4",
     "README.md": "b5ccb0a2107945fcdd0a24db748a9294a17cea4c25697552df4590082e4c7909",
     "configs/agcrn.json": "38f5af9e50eab07d3cca44a82541b241a868ba51d4dee1a88a2027db74084dd4",
     "configs/barest.json": "0ee2df35f86ee57e636b964384f9f0d7e8a34e4cb6ff08f4acd8514b00c46b75",
@@ -37,7 +38,7 @@
     "docs/spec_eval_protocol.md": "f4aaefc66ad01ee2b20e8790f28dfdb7c29ac9a10d0a96489383d0211b9b8912",
     "docs/使用指南.md": "857bf5c0f902fd01c5f18341791a542507a2006db4cba803d0592442b898b104",
     "docs/实验教学手册_原理版.md": "c38e025c38c137d16d411ccdaba55b17279e56c8045ad4d6b8e93366d59e49b3",
-    "docs/服务器部署与同步.md": "ab7f35b3771d2f1053febd126c9d1fa3ba79eadcc36e02fbd6255307eae5c8af",
+    "docs/服务器部署与同步.md": "1326f49c8300c431018c5f15f28f38f0802da1f8018d57bdd8274f298afb865b",
     "docs/配对检验脚本.md": "194672fb73c83523305b342e10acceefda78079fb4968c5f33ac9693b6fdeaa6",
     "pyproject.toml": "795949850432bdb329d5efcfe2076a31840ae057b422fa5b4e5c749e8f6a2cd0",
     "scripts/analyze_persistence.py": "bf658e951b464381d4590863e6da02c0419045a6637b9a7795a7200ebc157b88",
