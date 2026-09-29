@@ -26,7 +26,7 @@ wpf-benchmark calibrate-wake
 wpf-benchmark prepare-wake-prior
 ```
 
-`models/wake.py` 生成 `data/processed/wake_prior.npz`。矩阵的**行是目标机组，列是上风向来源机组**。每个方向的图按行归一化；再按训练段风向出现频率求静态平均，并对非零行重新归一化。`models/networks.py` 是 AGCRN 与方法模型共用的图循环骨干；`models/agcrn.py` 保持原基线接口。
+`models/wake.py` 生成 `data/processed/wake_prior.npz`。矩阵的**行是目标机组，列是上风向来源机组**。每个方向的图按行归一化；再按训练段风向出现频率求静态平均，并对非零行重新归一化。`models/networks.py` 中的 `AGCRNLiteNetwork` 是 `agcrn_lite` 与方法模型共用的图循环骨干；论文架构的 `agcrn` 位于 `models/agcrn_original.py`，与方法模型不共用骨干。此前 Wave 1 中名为 `agcrn` 的运行属于现称 `agcrn_lite` 的旧实现。
 
 ## 3. W2：只在验证集选 λ
 

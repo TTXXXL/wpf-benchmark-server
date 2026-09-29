@@ -19,7 +19,8 @@ wpf-benchmark models
 | 传统学习 | `gbdt` | `models/gbdt.py` | 功率、风速、风向分量的窗口统计量 |
 | 深度学习 | `lstm_seq2seq` | `models/lstm_seq2seq.py` | 风速、风向分量、功率 |
 | 深度学习 | `patchtst` | `models/patchtst.py` | 同上，切成小时间片 |
-| 深度学习 | `agcrn` | `models/agcrn.py` | 同上，联合学习机组关系 |
+| 深度学习 | `agcrn_lite` | `models/agcrn_lite.py` | 原项目简化图循环模型，6 步池化 |
+| 深度学习 | `agcrn` | `models/agcrn.py`、`models/agcrn_original.py` | 论文 AGCRN 架构：完整时序、节点自适应参数与自适应图 |
 
 方法模型另有 `ours`、`ours_no_consist`、`ours_no_wake`、`barest` 四个注册名，位于 `models/pin.py`。它们的风速辅助目标、尾流标定和消融运行顺序见[方法模型与消融指南](method_ablation.md)。
 
@@ -58,10 +59,10 @@ wpf-benchmark run --model lstm_seq2seq --config configs/lstm_seq2seq.json --seed
 wpf-benchmark plots --all
 ```
 
-在 Linux 服务器上一次完成三个深度模型的 3 种子实验：
+在 Linux 服务器上依次完成深度模型的 3 种子实验：
 
 ```bash
-for model in lstm_seq2seq patchtst agcrn; do
+for model in lstm_seq2seq patchtst agcrn_lite agcrn; do
   wpf-benchmark run --model "$model" --config "configs/$model.json" --repeat 3 --no-plots
 done
 wpf-benchmark plots --all
@@ -69,7 +70,9 @@ wpf-benchmark plots --all
 
 每个 `configs/<模型名>.json` 都包含 `protocol`、`model` 和 `seed`。`protocol` 留空即默认时间划分；改窗口或划分时，在自己的实验配置里写明。命令行 `--seed` 会覆盖配置里的 seed；`--repeat 3` 顺序使用 seed、seed+1、seed+2。一次运行产生一对 `reports/eval/<模型名>_main_*.json`、`*_all_*.json`，并将路径追加到 `reports/eval/index.jsonl`。结果中的 `model_config` 是实际使用的参数，`timing` 是耗时，`model_size.n_params` 是参数量。主表多次运行的均值和标准差由图表读取索引时计算。
 
-深度模型按训练段每 6 步取一个窗口，最多训练 30 轮，验证段连续 5 轮没有进步就停止，并使用验证误差最小的一轮做测试预测。训练曲线保存在 `reports/train/<run_id>.log`。`agcrn` 将 144 步历史按 6 步平均后送入图循环层，以控制显存和运行时间。
+深度模型按训练段每 6 步取一个窗口，最多训练 30 轮，验证段连续 5 轮没有进步就停止，并使用验证误差最小的一轮做测试预测。训练曲线保存在 `reports/train/<run_id>.log`。`agcrn_lite` 将 144 步历史按 6 步平均后送入图循环层，默认使用 MSE；`agcrn` 保留全部 144 步，使用论文的 DAGG、NAPL 和直接多时距输出头，默认使用 MAE。两者因此不是只改一处结构的受控消融。当前 `agcrn` 沿用本项目的数据、输入特征和 30 轮预算，并非复现原论文数据集及完整训练设置。
+
+命名迁移：此前 Wave 1 以 `agcrn` 写出的预测数组和指标，来自现在的 `agcrn_lite` 架构。旧产物不会自动更名；绘图或汇总时应按运行配置确认身份。新版 `agcrn` 须重新训练，不能引用旧版 `agcrn` 的分数。
 
 ## 功率曲线模块
 

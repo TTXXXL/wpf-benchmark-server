@@ -1,4 +1,4 @@
-"""Reusable adaptive graph recurrent network for AGCRN and PIN variants.
+"""The historical graph recurrent network retained for lite and PIN runs.
 
 This module is imported only when a deep model is built, so PyTorch remains an
 optional dependency for the rest of the benchmark.
@@ -24,8 +24,8 @@ class GraphCell(nn.Module):
         return update * state + (1 - update) * candidate
 
 
-class AGCRNNetwork(nn.Module):
-    """Original AGCRN parameter order, with an optional auxiliary wind head."""
+class AGCRNLiteNetwork(nn.Module):
+    """The established pooled graph decoder, optionally with a wind head."""
 
     def __init__(self, n_turbines: int, hidden: int, layers: int, emb: int,
                  horizon: int, temporal_stride: int, output_wind: bool = False):
@@ -47,7 +47,7 @@ class AGCRNNetwork(nn.Module):
         return torch.softmax(torch.relu(self.node_left @ self.node_right), dim=-1)
 
     def forward(self, x):
-        # Keep the baseline's pooling and autoregressive decoder unchanged.
+        # Preserve the historical lite and PIN architecture for valid ablations.
         b0, n0, f0, w0 = x.shape
         step = min(self.temporal_stride, w0)
         pooled = torch.nn.functional.avg_pool1d(

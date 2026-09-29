@@ -1,1 +1,1 @@
-{"protocol": {}, "model": {"hidden": 64, "layers": 2, "emb": 10, "temporal_stride": 6, "dropout": 0.1, "lr": 0.001, "batch": 16, "epochs": 30, "patience": 5, "stride": 6, "weight_decay": 0.0}, "seed": 0}
+{"protocol": {}, "model": {"hidden": 64, "layers": 2, "emb": 10, "cheb_k": 2, "loss": "mae", "dropout": 0.0, "lr": 0.001, "batch": 16, "epochs": 30, "patience": 5, "stride": 6, "weight_decay": 0.0}, "seed": 0}

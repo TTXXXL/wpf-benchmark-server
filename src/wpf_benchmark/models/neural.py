@@ -14,6 +14,7 @@ class NeuralForecaster(BaseForecaster):
     features = ("Wspd", "Wsin", "Wcos", "Patv")
     history_scale = "normalized"
     graph_model = False
+    loss_name = "mse"
 
     def __init__(self, hidden: int, layers: int = 2, dropout: float = 0.1,
                  lr: float = 0.001, batch: int = 256, epochs: int = 30,
@@ -118,7 +119,9 @@ class NeuralForecaster(BaseForecaster):
                     mt = torch.from_numpy(mask).to(self.device)
                     with torch.set_grad_enabled(training):
                         pred = self.network(xt)
-                        loss_sum = ((pred - yt).square() * mt).sum()
+                        error = pred - yt
+                        pointwise = error.abs() if self.loss_name == "mae" else error.square()
+                        loss_sum = (pointwise * mt).sum()
                         loss = loss_sum / mt.sum().clamp(min=1)
                         if training:
                             optimizer.zero_grad()
@@ -130,8 +133,8 @@ class NeuralForecaster(BaseForecaster):
                     raise ValueError("No valid targets in {} split".format(
                         "training" if training else "validation"))
                 metrics.append(error_sum / n_valid)
-            lines.append("epoch={} train_mse={:.8f} valid_mse={:.8f}".format(
-                epoch, metrics[0], metrics[1]))
+            lines.append("epoch={} train_{}={:.8f} valid_{}={:.8f}".format(
+                epoch, self.loss_name, metrics[0], self.loss_name, metrics[1]))
             if metrics[1] < best_loss - 1e-8:
                 best_loss = metrics[1]
                 best_epoch = epoch
@@ -144,8 +147,8 @@ class NeuralForecaster(BaseForecaster):
                     break
         self.network.load_state_dict(best_state)
         self.network.eval()
-        lines.append("best_epoch={} best_valid_mse={:.8f} stopped_epoch={}".format(
-            best_epoch, best_loss, epoch))
+        lines.append("best_epoch={} best_valid_{}={:.8f} stopped_epoch={}".format(
+            best_epoch, self.loss_name, best_loss, epoch))
         if hasattr(self, "log_path"):
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self.log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

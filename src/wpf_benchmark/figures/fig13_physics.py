@@ -48,7 +48,7 @@ def render(paths: ProjectPaths, out: Path) -> List[Path]:
              "seasonal_persistence": "Seasonal\npersist.",
              "trend_persistence": "Trend\npersist.",
              "lstm_seq2seq": "LSTM enc.", "patchtst": "PatchTST-style",
-             "agcrn": "AGCRN-style"}
+             "agcrn": "AGCRN", "agcrn_lite": "AGCRN-lite"}
     for ax in axes:
         labels = [short.get(name, model_style(name).label) for name in names]
         ax.set_xticks(x, labels, rotation=0 if len(names) > 4 else 15)

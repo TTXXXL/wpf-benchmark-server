@@ -48,10 +48,10 @@ class PINForecaster(NeuralForecaster):
                     lambda_wake=self.lambda_wake)
 
     def _build_network(self, torch, n_turbines: int):
-        from .networks import AGCRNNetwork
-        return AGCRNNetwork(n_turbines, self.hidden, self.layers, self.emb,
-                            self.config.horizon, self.temporal_stride,
-                            output_wind=True)
+        from .networks import AGCRNLiteNetwork
+        return AGCRNLiteNetwork(n_turbines, self.hidden, self.layers, self.emb,
+                                self.config.horizon, self.temporal_stride,
+                                output_wind=True)
 
     def _load_curves(self, train: pd.DataFrame) -> np.ndarray:
         metadata = {}
