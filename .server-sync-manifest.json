@@ -42,6 +42,7 @@
     "docs/配对检验脚本.md": "194672fb73c83523305b342e10acceefda78079fb4968c5f33ac9693b6fdeaa6",
     "pyproject.toml": "795949850432bdb329d5efcfe2076a31840ae057b422fa5b4e5c749e8f6a2cd0",
     "scripts/analyze_persistence.py": "bf658e951b464381d4590863e6da02c0419045a6637b9a7795a7200ebc157b88",
+    "scripts/mask_rule_ablation.py": "f92ae94eda2762564cd3a37e45e192d8fcf0bf4034392be5863d7428f79f4e36",
     "scripts/official_mask_rescore.py": "34a51949d087ab5ea1b477f5d398584dd5c24d581110eb7541be492cadcfa498",
     "scripts/paired_bootstrap.py": "3ea70b1fbfd8fe8bbc5b3444c332502d2868968c739efa443694b2ee14691ae5",
     "scripts/wave1_paired_bootstrap.py": "b126095995080d15a0c1de492c659097e17fc0bd1f3a9f39f9c4494eeaa4109b",
