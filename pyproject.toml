@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wpf-benchmark"
+version = "0.1.0"
+description = "Reproducible SDWPF wind power forecasting benchmark"
+readme = "README.md"
+requires-python = ">=3.8,<3.13"
+dependencies = [
+  "numpy>=1.21.2,<3",
+  "pandas>=2.0.3,<3.1",
+  "matplotlib>=3.5,<3.10",
+  "pyarrow>=17.0.0",
+]
+
+[project.optional-dependencies]
+gbdt = ["lightgbm>=3.3,<5"]
+gbdt-fallback = ["xgboost>=1.6,<2.1"]
+deep = [
+  "torch>=1.11,<2.0; python_version<'3.11'",
+  "torch>=2.3,<3; python_version>='3.11'",
+]
+
+[project.scripts]
+wpf-benchmark = "wpf_benchmark.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

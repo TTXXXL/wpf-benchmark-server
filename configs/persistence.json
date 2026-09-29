@@ -1,0 +1,9 @@
+{
+  "protocol": {
+    "input_window": 144,
+    "horizon": 12,
+    "train_days": 196,
+    "val_days": 25
+  },
+  "model": {}
+}
