@@ -19,7 +19,7 @@ import pandas as pd
 from ..paths import ProjectPaths
 from ..evaluation.config import ProtocolConfig
 
-matplotlib.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "DejaVu Sans"]
+matplotlib.rcParams["font.sans-serif"] = ["DejaVu Sans"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 matplotlib.rcParams["axes.spines.top"] = False
 matplotlib.rcParams["axes.spines.right"] = False
@@ -53,8 +53,8 @@ def corr_vs_distance(W: pd.DataFrame, loc: pd.DataFrame, lines: list[str],
     means = np.array(means)
     fig, ax = plt.subplots(figsize=(5.6, 3.4))
     ax.plot(mids / 1000, means, marker="o", color="#0072B2")
-    ax.set_xlabel("机组间距离 (km)"); ax.set_ylabel("平均风速相关")
-    ax.set_title("风速相关随距离的衰减（决定邻居池边界）")
+    ax.set_xlabel("Distance between turbines (km)"); ax.set_ylabel("Mean wind-speed correlation")
+    ax.set_title("Wind-speed correlation versus distance")
     fig.tight_layout(); fig.savefig(paths.figures / "k_selection.png", dpi=150); plt.close(fig)
     r1k = means[1]  # 0.5–1.5 km 档
     lines.append(f"- 机组对平均距离 {dist.mean()/1000:.2f} km；相关随距离单调衰减")

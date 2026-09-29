@@ -20,7 +20,7 @@ import pandas as pd
 
 from ..paths import ProjectPaths
 
-matplotlib.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "DejaVu Sans"]
+matplotlib.rcParams["font.sans-serif"] = ["DejaVu Sans"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 matplotlib.rcParams["axes.spines.top"] = False
 matplotlib.rcParams["axes.spines.right"] = False
@@ -103,7 +103,7 @@ def curtail_idle(df: pd.DataFrame, lines: list[str], paths: ProjectPaths) -> Non
     daily = m.assign(idle=idle).groupby("Day")["idle"].mean()
     fig, ax = plt.subplots(figsize=(9, 2.6))
     ax.imshow(daily.values[None, :], aspect="auto", cmap="Reds", extent=[1, 245, 0, 1])
-    ax.set_yticks([]); ax.set_xlabel("天（Day）"); ax.set_title("逐日停机/零功率行占比（识别成段停机期）")
+    ax.set_yticks([]); ax.set_xlabel("Day"); ax.set_title("Daily share of suspected idle or fault rows")
     fig.tight_layout(); fig.savefig(paths.figures / "idle_daily.png", dpi=150); plt.close(fig)
 
 
@@ -114,18 +114,18 @@ def power_curve(df: pd.DataFrame, lines: list[str], paths: ProjectPaths) -> None
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     ax = axes[0]
     ax.hexbin(m["Wspd"], m["Patv"], gridsize=90, cmap="viridis", bins="log", mincnt=1)
-    ax.set_xlabel("风速 Wspd (m/s)"); ax.set_ylabel("功率 Patv (kW)")
-    ax.set_title("全场 风速–功率 密度（对数色标）")
+    ax.set_xlabel("Wind speed Wspd (m/s)"); ax.set_ylabel("Power Patv (kW)")
+    ax.set_title("Farm wind-power density (log scale)")
     # 单机：1 号机，区分升/降风速段看滞回
     ax = axes[1]
     t1 = df[df["TurbID"] == 1].dropna(subset=["Patv", "Wspd"])
     t1 = t1[(t1["Patv"] >= 0) & (t1["Wspd"] < 30)].copy()
     dv = t1["Wspd"].diff()  # 相邻 10min 风速变化
     up = t1[dv > 0.05]; down = t1[dv < -0.05]
-    for seg, lbl, c in [(up, "升风速段", "#0072B2"), (down, "降风速段", "#D55E00")]:
+    for seg, lbl, c in [(up, "Increasing wind speed", "#0072B2"), (down, "Decreasing wind speed", "#D55E00")]:
         ax.scatter(seg["Wspd"], seg["Patv"], s=2, alpha=0.15, color=c, label=lbl)
-    ax.legend(markerscale=8); ax.set_xlabel("风速 (m/s)"); ax.set_ylabel("功率 (kW)")
-    ax.set_title("1 号机功率曲线的滞回结构（H1 预研素材）")
+    ax.legend(markerscale=8); ax.set_xlabel("Wind speed (m/s)"); ax.set_ylabel("Power (kW)")
+    ax.set_title("Turbine 1: wind-power hysteresis")
     fig.tight_layout(); fig.savefig(paths.figures / "power_curve.png", dpi=150); plt.close(fig)
     lines.append("\n## 风速–功率\n")
     lines.append("- 见 `figs/power_curve.png`：左为全场密度散点（功率曲线形态），右为 1 号机升/降风速段分层（滞回证据初查）")
@@ -173,8 +173,8 @@ def wake_lag(df: pd.DataFrame, lines: list[str], paths: ProjectPaths) -> None:
     mean_r = rs.mean(axis=0)
     fig, ax = plt.subplots(figsize=(5.2, 3.2))
     ax.plot(lags, mean_r, marker="o", color="#0072B2")
-    ax.set_xlabel("下游相对上游的滞后（小时）"); ax.set_ylabel("平均互相关")
-    ax.set_title(f"下游机组功率滞后互相关（{len(pairs)} 对）")
+    ax.set_xlabel("Downstream lag relative to upstream (h)"); ax.set_ylabel("Mean cross-correlation")
+    ax.set_title(f"Downstream power lag ({len(pairs)} pairs)")
     fig.tight_layout(); fig.savefig(paths.figures / "wake_lag.png", dpi=150); plt.close(fig)
     best = lags[int(np.argmax(mean_r))]
     lines.append(f"- 平均互相关在滞后 {best} h 最大（{mean_r.max():.3f}）；0 滞后相关 {mean_r[0]:.3f}")

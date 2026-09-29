@@ -31,7 +31,7 @@ import pandas as pd
 
 from ..paths import ProjectPaths
 
-matplotlib.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "DejaVu Sans"]
+matplotlib.rcParams["font.sans-serif"] = ["DejaVu Sans"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 matplotlib.rcParams["axes.spines.top"] = False
 matplotlib.rcParams["axes.spines.right"] = False
@@ -332,13 +332,13 @@ def main(paths: ProjectPaths = None) -> None:
     # 图 1：清洗前后 1 号机功率曲线
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     for ax, (v, p, ttl) in zip(axes, [
-        (wide["Wspd"][:, 0], wide["Patv"][:, 0], "清洗后（含限电行）"),
-        (wide["Wspd"][:, 0][ok_after[:, 0]], wide["Patv"][:, 0][ok_after[:, 0]], "清洗后（剔除限电/离群/停机）"),
+        (wide["Wspd"][:, 0], wide["Patv"][:, 0], "Cleaned (curtailment retained)"),
+        (wide["Wspd"][:, 0][ok_after[:, 0]], wide["Patv"][:, 0][ok_after[:, 0]], "Valid operating points"),
     ]):
         sel = np.isfinite(v) & np.isfinite(p) & (p >= 0) & (v < 30)
         ax.hexbin(v[sel], p[sel], gridsize=80, cmap="viridis", bins="log", mincnt=1)
-        ax.plot(centers, curves[0], color="#D55E00", lw=1.5, label="拟合功率曲线")
-        ax.set_xlabel("风速 (m/s)"); ax.set_ylabel("功率 (kW)"); ax.set_title(f"1 号机：{ttl}")
+        ax.plot(centers, curves[0], color="#D55E00", lw=1.5, label="Fitted power curve")
+        ax.set_xlabel("Wind speed (m/s)"); ax.set_ylabel("Power (kW)"); ax.set_title(f"Turbine 1: {ttl}")
         ax.legend()
     fig.tight_layout(); fig.savefig(paths.figures / "cleaning_powercurve.png", dpi=150); plt.close(fig)
 
@@ -349,7 +349,7 @@ def main(paths: ProjectPaths = None) -> None:
     for f in flags:
         per_day = pd.DataFrame({"day": day, "v": out[f].to_numpy().reshape(T, N).mean(axis=1)}).groupby("day")["v"].mean()
         ax.plot(per_day.index, per_day.values, color=cmap[f], lw=1.0, label=f)
-    ax.set_xlabel("天"); ax.set_ylabel("行占比"); ax.set_title("各标记逐日占比")
+    ax.set_xlabel("Day"); ax.set_ylabel("Flagged fraction"); ax.set_title("Daily fraction of flagged rows")
     ax.legend(ncol=4)
     fig.tight_layout(); fig.savefig(paths.figures / "cleaning_flags.png", dpi=150); plt.close(fig)
 
