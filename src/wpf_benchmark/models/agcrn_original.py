@@ -10,6 +10,8 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from .current_power import latest_history_power
+
 
 class AdaptiveGraphConvolution(nn.Module):
     """Node-adaptive parameter learning over Chebyshev graph supports."""
@@ -58,16 +60,23 @@ class PaperAGCRNNetwork(nn.Module):
     """Full-resolution AGCRN encoder with the paper's direct forecast head."""
 
     def __init__(self, n_turbines: int, input_size: int, hidden: int,
-                 layers: int, embedding_size: int, cheb_k: int, horizon: int):
+                 layers: int, embedding_size: int, cheb_k: int, horizon: int,
+                 current_power_skip: bool = False, power_index: int = 3,
+                 power_fallback: float = 0.0):
         super().__init__()
         if min(n_turbines, input_size, hidden, layers, embedding_size, horizon) <= 0:
             raise ValueError("AGCRN dimensions must be positive")
         if cheb_k < 2:
             raise ValueError("cheb_k must be at least 2")
+        if current_power_skip and not 0 <= power_index < input_size:
+            raise ValueError("power_index must identify an input feature")
         self.n_turbines = n_turbines
         self.input_size = input_size
         self.hidden = hidden
         self.cheb_k = cheb_k
+        self.current_power_skip = current_power_skip
+        self.power_index = power_index
+        self.power_fallback = power_fallback
         self.node_embeddings = nn.Parameter(torch.empty(n_turbines, embedding_size))
         self.cells = nn.ModuleList([
             AdaptiveGraphCell(input_size if layer == 0 else hidden,
@@ -76,6 +85,10 @@ class PaperAGCRNNetwork(nn.Module):
         ])
         self.end_conv = nn.Conv2d(1, horizon, kernel_size=(1, hidden))
         self.reset_parameters()
+        if self.current_power_skip:
+            # Start at persistence; the signed head learns departures from it.
+            nn.init.zeros_(self.end_conv.weight)
+            nn.init.zeros_(self.end_conv.bias)
 
     def reset_parameters(self):
         # Match the initialization pass in the authors' Run.py.
@@ -101,6 +114,9 @@ class PaperAGCRNNetwork(nn.Module):
     def forward(self, x):
         if x.ndim != 4 or x.shape[1] != self.n_turbines or x.shape[2] != self.input_size:
             raise ValueError("Expected AGCRN input with shape (B, N, F, W)")
+        if self.current_power_skip:
+            anchor = latest_history_power(x, self.power_index, self.power_fallback)
+            x = torch.where(torch.isfinite(x), x, torch.zeros_like(x))
         sequence = x.permute(0, 3, 1, 2)
         supports = self.graph_supports()
         for cell in self.cells:
@@ -113,4 +129,5 @@ class PaperAGCRNNetwork(nn.Module):
                 outputs.append(state)
             sequence = torch.stack(outputs, dim=1)
         # The authors' 1 x hidden Conv2d emits every horizon directly.
-        return self.end_conv(sequence[:, -1].unsqueeze(1)).squeeze(-1).transpose(1, 2)
+        power = self.end_conv(sequence[:, -1].unsqueeze(1)).squeeze(-1).transpose(1, 2)
+        return power + anchor if self.current_power_skip else power

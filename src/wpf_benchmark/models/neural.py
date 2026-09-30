@@ -43,6 +43,18 @@ class NeuralForecaster(BaseForecaster):
     def _build_network(self, torch, n_turbines: int):
         raise NotImplementedError
 
+    def _normalized_zero_power(self):
+        j = self.features.index("Patv")
+        span = max(self.scaler.maximum[j] - self.scaler.minimum[j], 1e-6)
+        return float(-self.scaler.minimum[j] / span)
+
+    def _network_histories(self, histories):
+        # Residual networks select the last finite Patv before filling inputs.
+        # Preserve missing values identically in training and inference.
+        if getattr(self, "current_power_skip", False):
+            return histories
+        return np.nan_to_num(histories, nan=0.0, posinf=0.0, neginf=0.0)
+
     def _batches(self, cube, valid_target, target, issues, shuffle):
         w, h = self.config.input_window, self.config.horizon
         past = np.arange(w) - w + 1
@@ -55,7 +67,7 @@ class NeuralForecaster(BaseForecaster):
                 y = target[take[:, None] + future[None, :]].transpose(0, 2, 1)
                 m = valid_target[take[:, None] + future[None, :]].transpose(0, 2, 1)
                 m &= np.isfinite(y)
-                yield np.nan_to_num(x), np.nan_to_num(y), m
+                yield self._network_histories(x), np.nan_to_num(y), m
         else:
             n = cube.shape[1]
             pairs = np.arange(len(issues) * n)
@@ -103,6 +115,9 @@ class NeuralForecaster(BaseForecaster):
         no_improve = 0
         lines = ["model={} device={} train_windows={} valid_windows={} params={}".format(
             self.name, self.device, len(train_issues), len(valid_issues), self.n_params)]
+        if hasattr(self, "current_power_skip"):
+            lines.append("loss={} current_power_skip={} power_anchor=latest_finite_history "
+                         "power_anchor_fallback=zero_kw".format(self.loss_name, self.current_power_skip))
         for epoch in range(1, self.epochs + 1):
             metrics = []
             for training, c, m, y, issues in (
@@ -158,7 +173,7 @@ class NeuralForecaster(BaseForecaster):
 
     def predict_batch(self, histories: np.ndarray) -> np.ndarray:
         torch = self.torch
-        x = np.nan_to_num(histories, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        x = self._network_histories(histories).astype(np.float32)
         b, n, f, w = x.shape
         if self.graph_model:
             if n != len(self.turbine_ids):

@@ -15,12 +15,16 @@ class AGCRNForecaster(NeuralForecaster):
     def __init__(self, hidden: int = 64, layers: int = 2, emb: int = 10,
                  cheb_k: int = 2, loss: str = "mae", dropout: float = 0.0,
                  lr: float = 0.001, batch: int = 16, epochs: int = 30,
-                 patience: int = 5, stride: int = 6, weight_decay: float = 0.0):
+                 patience: int = 5, stride: int = 6, weight_decay: float = 0.0,
+                 current_power_skip: bool = False):
         super().__init__(hidden, layers, dropout, lr, batch, epochs, patience,
                          stride, weight_decay)
         self.emb = int(emb)
         self.cheb_k = int(cheb_k)
         self.loss_name = str(loss)
+        if not isinstance(current_power_skip, bool):
+            raise ValueError("current_power_skip must be a boolean")
+        self.current_power_skip = current_power_skip
         if self.emb <= 0 or self.cheb_k < 2:
             raise ValueError("emb must be positive and cheb_k must be at least 2")
         if self.loss_name not in ("mae", "mse"):
@@ -29,10 +33,14 @@ class AGCRNForecaster(NeuralForecaster):
     @property
     def model_config(self) -> dict:
         return dict(super().model_config, emb=self.emb,
-                    cheb_k=self.cheb_k, loss=self.loss_name)
+                    cheb_k=self.cheb_k, loss=self.loss_name,
+                    current_power_skip=self.current_power_skip)
 
     def _build_network(self, torch, n_turbines: int):
         from .agcrn_original import PaperAGCRNNetwork
         return PaperAGCRNNetwork(n_turbines, len(self.features), self.hidden,
                                  self.layers, self.emb, self.cheb_k,
-                                 self.config.horizon)
+                                 self.config.horizon,
+                                 current_power_skip=self.current_power_skip,
+                                 power_index=self.features.index("Patv"),
+                                 power_fallback=self._normalized_zero_power())

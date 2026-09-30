@@ -69,27 +69,29 @@ def plan(root, experiment, repeat, first_seed):
     return jobs
 
 
-def fingerprint(root, jobs):
+def fingerprint(root, jobs, extra_sources=()):
     files = sorted((root / "src").rglob("*.py"))
     files += sorted({root / job["args"][4] for job in jobs})
     files += [root / "scripts/rerun_m1.py", root / "scripts/rerun_m1.sh"]
+    files += [root / p for p in extra_sources]
     files += [root / "data/raw/sdwpf" / name for name in (
         "sdwpf_245days_v1.csv", "sdwpf_baidukddcup2022_turb_location.csv")]
     return {p.relative_to(root).as_posix(): sha256(p) for p in files}
 
 
-def dependencies():
+def dependencies(require_gbdt=True):
     if not (3, 8) <= sys.version_info[:2] < (3, 13):
         raise RuntimeError("Use the project's Python 3.8-3.12 environment")
     versions = {"python": sys.version, "executable": sys.executable}
     for name in ("numpy", "pandas", "pyarrow", "matplotlib", "torch"):
         module = importlib.import_module(name)
         versions[name] = module.__version__
-    try:
-        backend = importlib.import_module("lightgbm")
-    except ImportError:
-        backend = importlib.import_module("xgboost")
-    versions[backend.__name__] = backend.__version__
+    if require_gbdt:
+        try:
+            backend = importlib.import_module("lightgbm")
+        except ImportError:
+            backend = importlib.import_module("xgboost")
+        versions[backend.__name__] = backend.__version__
     return versions
 
 
@@ -114,6 +116,15 @@ def execute(root, args, log):
                                .format(code, log))
 
 
+def matches_job(result, job, experiment):
+    if (result.get("model"), result.get("seed"), result.get("experiment"),
+        result.get("target_mask"), result.get("eval_mask")) != (
+            job["model"], job["seed"], experiment, "m1", "m1"):
+        return False
+    actual = result.get("model_config", {})
+    return all(actual.get(key) == value for key, value in job.get("model_config", {}).items())
+
+
 def collect(root, job, experiment):
     candidates = sorted((root / "reports/eval").glob(job["tag"] + "_main_*.json"),
                         key=lambda p: p.stat().st_mtime_ns, reverse=True)
@@ -121,10 +132,8 @@ def collect(root, job, experiment):
         raise RuntimeError("No main result for " + job["key"])
     main = candidates[0]
     result = read_json(main)
-    if (result.get("model"), result.get("seed"), result.get("experiment"),
-        result.get("target_mask"), result.get("eval_mask")) != (
-            job["model"], job["seed"], experiment, "m1", "m1"):
-        raise RuntimeError("Result identity or M1 masks do not match: " + str(main))
+    if not matches_job(result, job, experiment):
+        raise RuntimeError("Result identity, M1 masks or model config do not match: " + str(main))
     all_table = main.with_name(main.name.replace(job["tag"] + "_main_",
                                                 job["tag"] + "_all_", 1))
     files = [main, all_table, root / "reports/eval" / (result["run_id"] + "_arrays.npz"),
@@ -146,15 +155,14 @@ def completed(root, marker, job, experiment):
         if not path.is_file() or path.stat().st_size != size:
             return False
     result = read_json(root / saved["main"])
-    return (result.get("model"), result.get("seed"), result.get("experiment"),
-            result.get("target_mask"), result.get("eval_mask")) == (
-                job["model"], job["seed"], experiment, "m1", "m1")
+    return matches_job(result, job, experiment)
 
 
 def summary(root, directory, jobs, experiment):
     with (directory / "results.csv").open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["model", "seed", "target_mask", "eval_mask", "MAE_kW", "RMSE_kW",
+        writer.writerow(["job", "model", "seed", "loss", "current_power_skip", "config",
+                         "target_mask", "eval_mask", "MAE_kW", "RMSE_kW",
                          "n_samples", "run_id", "main_json"])
         for job in jobs:
             marker = directory / (job["key"] + ".done.json")
@@ -162,14 +170,16 @@ def summary(root, directory, jobs, experiment):
                 continue
             saved = read_json(marker)
             result = read_json(root / saved["main"])
-            writer.writerow([result["model"], result["seed"], "m1", "m1",
+            params = result.get("model_config", {})
+            writer.writerow([job["key"], result["model"], result["seed"], params.get("loss", ""),
+                             params.get("current_power_skip", ""), job["args"][4], "m1", "m1",
                              result["A_turbine"]["MAE_kW"], result["A_turbine"]["RMSE_kW"],
                              result["n_samples"], result["run_id"], saved["main"]])
 
 
-def run_suite(root, directory, jobs, experiment, versions):
+def run_suite(root, directory, jobs, experiment, versions, extra_sources=()):
     manifest = {"schema": 1, "experiment": experiment, "jobs": jobs,
-                "sources": fingerprint(root, jobs), "environment": versions}
+                "sources": fingerprint(root, jobs, extra_sources), "environment": versions}
     manifest_path = directory / "manifest.json"
     if manifest_path.exists() and read_json(manifest_path) != manifest:
         raise RuntimeError("Code/config/data/environment/plan changed. Use a new --experiment name.")

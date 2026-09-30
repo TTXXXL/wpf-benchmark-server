@@ -74,6 +74,8 @@ wpf-benchmark plots --all
 
 深度模型按训练段每 6 步取一个窗口，最多训练 30 轮，验证段连续 5 轮没有进步就停止，并使用验证误差最小的一轮做测试预测。训练曲线保存在 `reports/train/<run_id>.log`。`agcrn_lite` 将 144 步历史按 6 步平均后送入图循环层，默认使用 MSE；`agcrn` 保留全部 144 步，使用论文的 DAGG、NAPL 和直接多时距输出头，默认使用 MAE。两者因此不是只改一处结构的受控消融。当前 `agcrn` 沿用本项目的数据、输入特征和 30 轮预算，并非复现原论文数据集及完整训练设置。
 
+两模型现在均支持 `model.loss="mae"` / `"mse"` 以及 `model.current_power_skip=true`。开启直通时预测为 P(t)+Δh，残差输出头初始化为零；原 `agcrn.json` / `agcrn_lite.json` 保留关闭直通的对照。新四配置与完整八组消融可用 `bash scripts/rerun_graph_ablation.sh` 运行，详见[图模型残差与损失消融](图模型残差与损失消融.md)。
+
 命名迁移：此前 Wave 1 以 `agcrn` 写出的预测数组和指标，来自现在的 `agcrn_lite` 架构。旧产物不会自动更名；绘图或汇总时应按运行配置确认身份。新版 `agcrn` 须重新训练，不能引用旧版 `agcrn` 的分数。
 
 ## 功率曲线模块

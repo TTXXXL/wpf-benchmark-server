@@ -8,6 +8,8 @@
 
 规则、线性、GBDT 与四个深度基线（含 `agcrn_lite` 和论文架构的 `agcrn`）的配置、安装和运行命令见[模型基线使用说明](docs/model_baselines.md)。
 
+AGCRN / Lite 的当前功率残差直通及 MAE/MSE 配对实验，运行 `bash scripts/rerun_graph_ablation.sh`；完整八组开关消融、配置与续跑说明见[图模型残差与损失消融](docs/图模型残差与损失消融.md)。
+
 ## 安装与数据
 
 目标环境为 Python 3.8。进入项目目录并在所用环境中执行：
