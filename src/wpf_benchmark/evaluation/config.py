@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..data.masks import TARGET_MASKS
+
 
 @dataclass
 class ProtocolConfig:
+    target_mask: str = "m1"
+    eval_mask: str = "m1"
     input_window: int = 144
     horizon: int = 12
     train_days: int = 196
@@ -27,6 +31,8 @@ class ProtocolConfig:
     cut_out: float = 25.0
 
     def __post_init__(self) -> None:
+        if self.target_mask not in TARGET_MASKS or self.eval_mask not in TARGET_MASKS:
+            raise ValueError("target_mask and eval_mask must be m1 or m2")
         if min(self.input_window, self.horizon, self.train_days, self.val_days,
                self.steps_per_day, self.stability_block_days, self.ramp_window_steps,
                self.curve_min_samples) <= 0:

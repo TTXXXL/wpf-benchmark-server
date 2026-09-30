@@ -34,7 +34,7 @@ wpf-benchmark plots --all
 
 不安装包时可在项目目录执行 `PYTHONPATH=src python -m wpf_benchmark ...`。从其他目录执行时，在子命令前加 `--root /path/to/wpf-benchmark`。
 
-`eval selftest` 同时生成主表和附表 JSON 及 `reports/eval_selftest.md`。`run` 使用同一预测数组生成 `reports/eval/{tag}_main_*.json` 和 `{tag}_all_*.json`。主表排除配置中的缺失、插补和异常标记；附表按评估规格只要求目标 Patv 有限，因此可能包含插补行。
+`eval selftest` 生成 M1、M2 主表与宽松附表的 JSON 及 `reports/eval_selftest.md`。`run` 使用同一预测数组生成 `reports/eval/{tag}_main_*.json` 和 `{tag}_all_*.json`。新运行默认 M1：原有质量标记之外还排除原始顺桨等官方规则异常；可用 `--target-mask`、`--eval-mask` 在 M1/M2 间切换。定义与命令见 [目标掩码口径](docs/目标掩码口径_M1_M2.md)。附表仍只要求清洗后 Patv 有限。
 
 清洗时当前连续缺失的前 3 步只用过去有效值填补，第 4 步起使用同时刻邻机值；空间邻居数按前 196 天的两个缺失场景标定为 k=12。功率曲线与残差阈值也仅从训练段估计。`preprocess` 会重写元数据，之后须重新运行 `fit-power-curve` 才能把方法模型的训练段曲线持久化。
 
@@ -66,7 +66,7 @@ python -m unittest discover -s tests -v
 wpf-benchmark eval selftest
 ```
 
-现有数据的持续性回归基准：主表 4,948,656 个有效评分格，附表 5,537,952 个；主表 MAE 约 66.46 kW，真实值和持续性预测的功率曲线违背率约为 0.73% 和 17.70%。详细定义见 [评估协议](docs/spec_eval_protocol.md)。
+新默认 M1 的持续性回归基准：主表 3,188,016 个有效评分格，MAE 约 99.83 kW；M2 为 3,636,220 格，MAE 约 104.95 kW；宽松附表仍为 5,537,952 格。旧版 4,948,656 格、66.46 kW 属于历史 M0，不能与新口径混用。详细定义见 [目标掩码口径](docs/目标掩码口径_M1_M2.md)和[评估协议](docs/spec_eval_protocol.md)。
 
 模块间的数据流、模型契约与时间对齐约定见 [架构说明](docs/architecture.md)。
 

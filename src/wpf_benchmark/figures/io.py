@@ -209,7 +209,7 @@ def save_run_arrays(paths: ProjectPaths, run_id: str, forecasts: np.ndarray,
                     evaluator: Any) -> Path:
     """保存画时序图所需的同一预测网格及主表有效位。"""
     paths.evaluation.mkdir(parents=True, exist_ok=True)
-    truth = evaluator._valid_stack(evaluator.dte["Patv"])
+    truth = evaluator.truth_for(evaluator.cfg.eval_mask)
     valid = evaluator._valid_stack(evaluator.valid_main)
     speed = evaluator._valid_stack(evaluator.dte["Wspd"])
     last = evaluator.dte["Patv"][:evaluator.T_eff, :, None]
@@ -221,6 +221,12 @@ def save_run_arrays(paths: ProjectPaths, run_id: str, forecasts: np.ndarray,
     source = paths.evaluation / "{}_arrays.npz".format(run_id)
     np.savez_compressed(source, forecasts=forecasts.astype(np.float32),
                         truth=truth.astype(np.float32), valid=valid,
+                        valid_m1=evaluator._valid_stack(evaluator.valid_m1),
+                        valid_m2=evaluator._valid_stack(evaluator.valid_m2),
+                        truth_m1=evaluator.truth_for("m1").astype(np.float32),
+                        truth_m2=evaluator.truth_for("m2").astype(np.float32),
+                        target_mask=np.asarray(evaluator.cfg.target_mask),
+                        eval_mask=np.asarray(evaluator.cfg.eval_mask),
                         times=time_ns, turbine_ids=evaluator.dte["tids"],
                         ramp_mask=ramp, wind_speed=speed.astype(np.float32),
                         curtail_mask=curtail, last_power=last[:, :, 0].astype(np.float32))

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
@@ -47,10 +48,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     run.add_argument("--repeat", type=int, default=1,
                      help="Sequential runs with seeds seed, seed+1, ...")
     run.add_argument("--experiment", default="standard")
+    run.add_argument("--target-mask", choices=("m1", "m2"),
+                     help="Training and validation target definition (default: M1)")
+    run.add_argument("--eval-mask", choices=("m1", "m2"),
+                     help="Main test scoring definition (default: M1)")
     run.add_argument("--validation-only", action="store_true",
                      help="Train and save validation metrics without loading test data")
     run.add_argument("--no-plots", action="store_true",
                      help="Skip automatic paper-figure refresh after this run")
+    re = commands.add_parser("rescore", help="Score saved M1/M2 forecasts under another mask")
+    re.add_argument("--run-id", required=True)
+    re.add_argument("--eval-mask", required=True, choices=("m1", "m2"))
+    re.add_argument("--experiment", default="mask_rescore")
+    re.add_argument("--tag", default="")
     arrays = run.add_mutually_exclusive_group()
     arrays.add_argument("--save-arrays", dest="save_arrays", action="store_true", default=True)
     arrays.add_argument("--no-save-arrays", dest="save_arrays", action="store_false")
@@ -106,6 +116,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from .runner import eval_forecaster, seed_all
         settings = _load_experiment_config(args.config, paths)
         protocol = ProtocolConfig(**settings.get("protocol", {}))
+        if args.target_mask or args.eval_mask:
+            protocol = replace(protocol,
+                               target_mask=args.target_mask or protocol.target_mask,
+                               eval_mask=args.eval_mask or protocol.eval_mask)
         if args.repeat <= 0:
             raise ValueError("--repeat must be positive")
         first_seed = int(settings.get("seed", 0) if args.seed is None else args.seed)
@@ -124,6 +138,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not args.no_plots:
             from .figures import generate
             generate(paths, paths.figures / "paper")
+    elif args.command == "rescore":
+        from .evaluation.rescore import rescore
+        results = rescore(paths, args.run_id, args.eval_mask,
+                          args.experiment, args.tag)
+        for table, result in results.items():
+            print("{} {}: MAE {:.2f} kW -> {}".format(
+                result["model"], table, result["A_turbine"]["MAE_kW"],
+                result["result_path"]))
     elif args.command == "plots":
         from .figures import generate
         out = Path(args.out) if args.out else paths.figures / "paper"

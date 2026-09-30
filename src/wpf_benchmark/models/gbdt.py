@@ -69,7 +69,7 @@ class GBDTForecaster(BaseForecaster):
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
         backend = self._backend()
-        times, self.turbine_ids, cube, valid_target, _ = training_cube(
+        times, self.turbine_ids, cube, valid_target, target, _ = training_cube(
             train, self.features, self.config, self.scaler)
         issues = issue_indices(len(times), self.config.input_window,
                                self.config.horizon, self.stride)
@@ -82,7 +82,7 @@ class GBDTForecaster(BaseForecaster):
         for offset in range(0, len(issues), 64):
             selected = issues[offset:offset + 64]
             x, y, mask = next(window_batches(
-                cube, valid_target, 0, selected, self.config.input_window,
+                cube, valid_target, target, selected, self.config.input_window,
                 self.config.horizon, len(selected)))
             x = x * np.maximum(self.scaler.maximum - self.scaler.minimum, 1e-6)[None, None, :, None]
             x += self.scaler.minimum[None, None, :, None]

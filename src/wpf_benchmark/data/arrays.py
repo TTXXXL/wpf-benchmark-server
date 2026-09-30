@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..evaluation.config import ProtocolConfig
+from .masks import OFFICIAL_COLUMNS
 
 
 def split_by_day(df: pd.DataFrame, cfg: ProtocolConfig):
@@ -35,10 +36,13 @@ def to_wide(df: pd.DataFrame, cfg: ProtocolConfig) -> Dict[str, Any]:
 
     data: Dict[str, Any] = {"tids": tids, "times": np.asarray(unique_times), "T": T, "N": N,
                             "Patv": widen("Patv"), "Wspd": widen("Wspd")}
-    for flag in cfg.exclude_flags_main:
+    for flag in tuple(cfg.exclude_flags_main) + tuple(OFFICIAL_COLUMNS[:-1]):
         if flag not in df:
             raise ValueError("Configured exclusion flag absent from data: " + flag)
         mask = np.zeros((T, N), dtype=bool)
         mask[times, turbines] = df[flag].fillna(False).to_numpy(dtype=bool)
         data[flag] = mask
+    if "Patv_obs" not in df:
+        raise ValueError("Re-run preprocess to create official-rule column Patv_obs")
+    data["Patv_obs"] = widen("Patv_obs")
     return data

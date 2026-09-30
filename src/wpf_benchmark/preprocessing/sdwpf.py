@@ -186,6 +186,14 @@ def main(paths: ProjectPaths = None) -> None:
     paths.figures.mkdir(parents=True, exist_ok=True)
     df, loc, wide, ts_index, tids = load(paths)
     T, N = wide["Wspd"].shape
+    # Capture the paper's rules before wrapping directions or imputing sensors.
+    o_pitch = ((wide["Pab1"] > 89) | (wide["Pab2"] > 89) |
+               (wide["Pab3"] > 89))
+    o_zero_windy = (wide["Patv"] <= 0) & (wide["Wspd"] > 2.5)
+    o_dir_abnormal = (np.abs(wide["Ndir"]) > 720) | (np.abs(wide["Wdir"]) > 180)
+    o_bad = o_pitch | o_zero_windy | o_dir_abnormal
+    raw_valid = np.isfinite(wide["Patv"]) & np.isfinite(wide["Wspd"])
+    patv_obs = np.maximum(wide["Patv"], 0).astype(np.float32)
     train_rows = np.asarray(ts_index < pd.Timedelta(days=TRAIN_DAYS))
     if not train_rows.any() or train_rows.all():
         raise ValueError("Training boundary must leave both training and future rows")
@@ -301,6 +309,23 @@ def main(paths: ProjectPaths = None) -> None:
     out["f_curtail"] = m_curtail.ravel()
     out["f_stuck"] = f_stuck.ravel()
     out["f_farm"] = np.repeat(f_farm, N)
+    for name, values in (("o_pitch", o_pitch), ("o_zero_windy", o_zero_windy),
+                         ("o_dir_abnormal", o_dir_abnormal), ("o_bad", o_bad),
+                         ("raw_valid", raw_valid), ("Patv_obs", patv_obs)):
+        out[name] = values.ravel()
+    base_valid = np.isfinite(out["Patv"].to_numpy(dtype=float))
+    for flag in ("m_missing", "m_imputed", "m_outlier", "f_fault",
+                 "f_curtail", "f_farm"):
+        base_valid &= ~out[flag].to_numpy(dtype=bool)
+    mismatch = base_valid & (np.abs(out["Patv_obs"].to_numpy(dtype=float) -
+                                     out["Patv"].to_numpy(dtype=float)) > 1e-3)
+    if mismatch.any():
+        raise ValueError("Clean and observed Patv differ on historical base targets: " +
+                         str(int(mismatch.sum())))
+    L.append("\n## 论文规则目标列\n")
+    for name in ("o_pitch", "o_zero_windy", "o_dir_abnormal", "o_bad", "raw_valid"):
+        L.append("- `{}`: {:,} 行".format(name, int(out[name].sum())))
+    L.append("- 历史基础有效格的 Patv_obs/Patv 不一致：0 行\n")
     parquet_path = paths.processed / "sdwpf_clean.parquet"
     out.to_parquet(parquet_path, index=False)
 

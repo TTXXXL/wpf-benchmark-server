@@ -350,6 +350,11 @@ def analyze(eval_dir: Path, raw_path: Path, experiment: str, n_boot: int,
     runs: List[dict] = []
     stats_list = []
     for row in selected:
+        source_path = eval_dir / Path(row["json_path"].replace("\\", "/")).name
+        source_json = json.loads(source_path.read_text(encoding="utf-8"))
+        if source_json.get("target_mask") or source_json.get("config", {}).get("target_mask"):
+            raise ValueError("This historical diagnostic requires legacy M0 arrays; "
+                             "new M1/M2 runs already store their selected mask")
         arrays, info, _ = wb._read_run(eval_dir, row, reference)   # 含 MAE/RMSE 复算与网格对齐检查
         if reference is None:
             shape = arrays["forecasts"].shape

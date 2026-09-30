@@ -12,7 +12,8 @@ import pandas as pd
 
 from .data.io import load_clean, load_meta
 from .data.scaling import FeatureScaler
-from .data.schema import FEATURE_COLUMNS, FLAG_COLUMNS
+from .data.schema import FEATURE_COLUMNS, FLAG_COLUMNS, OFFICIAL_COLUMNS
+from .data.masks import target_valid
 from .data.windows import iter_history_batches, to_feature_cube
 from .evaluation.config import ProtocolConfig
 from .evaluation.evaluator import Evaluator
@@ -55,7 +56,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     if any(name not in FEATURE_COLUMNS for name in features):
         raise ValueError("Model requested a feature absent from cleaned data")
     columns = list(dict.fromkeys(("ts", "Day", "TurbID", "Patv") +
-                                 features + FLAG_COLUMNS + tuple(model.additional_columns)))
+                                 features + FLAG_COLUMNS + OFFICIAL_COLUMNS + tuple(model.additional_columns)))
     train = load_clean(paths, columns=columns,
                        filters=[("Day", "<=", cfg.train_days)])
     valid = load_clean(paths, columns=columns,
@@ -63,6 +64,8 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
                                 ("Day", "<=", cfg.train_days + cfg.val_days)])
     if train.empty or valid.empty:
         raise ValueError("Configured training or validation split is empty")
+    target_counts = {"train": int(target_valid(train, cfg.target_mask, cfg.exclude_flags_main).sum()),
+                     "validation": int(target_valid(valid, cfg.target_mask, cfg.exclude_flags_main).sum())}
     meta = load_meta(paths)
     use_meta = meta.get("train_days") == cfg.train_days
     scaler = (FeatureScaler.from_meta(meta, features) if use_meta
@@ -77,6 +80,14 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     fit_start = perf_counter()
     model.fit(train, valid)
     fit_seconds = perf_counter() - fit_start
+    log_header = ("target_mask={} train_target_cells={} validation_target_cells={}\n".format(
+        cfg.target_mask, target_counts["train"], target_counts["validation"]))
+    model.log_path.parent.mkdir(parents=True, exist_ok=True)
+    if model.log_path.is_file():
+        model.log_path.write_text(log_header + model.log_path.read_text(encoding="utf-8"),
+                                  encoding="utf-8")
+    else:
+        model.log_path.write_text(log_header, encoding="utf-8")
     if model.name == "persistence":
         fit_seconds = 0.0
     if hasattr(model, "export_interpret"):
@@ -89,6 +100,9 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
             raise ValueError("This model does not provide validation metrics")
         result = {"model": model.name, "table": "validation", "run_id": run_id,
                   "config": asdict(cfg), "model_config": model.model_config,
+                  "target_mask": cfg.target_mask, "validation_mask": cfg.target_mask,
+                  "eval_mask": None,
+                  "target_counts": target_counts,
                   "validation_metrics": model.validation_metrics,
                   "model_size": {"n_params": int(model.n_params),
                                  "flops_per_sample": model.flops_per_sample},
@@ -167,6 +181,8 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     evaluator = Evaluator(cfg, paths=paths)
     if not np.array_equal(evaluator.dte["tids"], turbine_ids) or evaluator.T_eff != t_eff:
         raise ValueError("Model and evaluator test grids differ")
+    target_counts["test_m1"] = int(evaluator._valid_stack(evaluator.valid_m1).sum())
+    target_counts["test_m2"] = int(evaluator._valid_stack(evaluator.valid_m2).sum())
     timing = {"fit_seconds": fit_seconds, "predict_seconds": predict_seconds,
               "n_predict_samples": int(t_eff * len(turbine_ids))}
     direct_consist = None
@@ -183,6 +199,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
         save_run_arrays(paths, run_id, forecasts, evaluator)
     effective_params = model.model_config
     digest = config_digest(cfg, effective_params)
+    sensitivity = evaluator.mask_sensitivity(forecasts)
     results: Dict[str, Any] = {}
     for table in ("main", "all"):
         result = evaluator.evaluate(forecasts, model.name, table)
@@ -190,6 +207,8 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
         result["history_scale"] = model.history_scale
         result["scaler_source"] = "sdwpf_meta.json" if use_meta else "configured_training_days"
         result["model_config"] = effective_params
+        result["target_counts"] = target_counts
+        result["mask_sensitivity"] = sensitivity
         if model.validation_metrics is not None:
             result["validation_metrics"] = model.validation_metrics
         if direct_consist is not None:

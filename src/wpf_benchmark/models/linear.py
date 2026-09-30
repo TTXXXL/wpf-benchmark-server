@@ -28,7 +28,7 @@ class LinearForecaster(BaseForecaster):
                 "fallback_turbines": getattr(self, "fallback_turbines", [])}
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
-        _, self.turbine_ids, cube, mask, _ = training_cube(
+        _, self.turbine_ids, cube, mask, target, _ = training_cube(
             train, self.features, self.config, self.scaler)
         power = cube[:, :, 0]
         w, h = self.config.input_window, self.config.horizon
@@ -42,7 +42,7 @@ class LinearForecaster(BaseForecaster):
         penalty[-1, -1] = 0
         for j in range(len(self.turbine_ids)):
             x = np.lib.stride_tricks.sliding_window_view(power[:, j], w)[issues - w + 1]
-            y = power[future, j]
+            y = target[future, j]
             good = mask[future, j].all(axis=1) & np.isfinite(y).all(axis=1)
             if not good.any():
                 # Some turbines have no fully valid H-step training window.

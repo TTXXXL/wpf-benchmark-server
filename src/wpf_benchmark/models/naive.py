@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .base import BaseForecaster
+from ..data.masks import target_valid, target_values
 from .registry import register_model
 
 
@@ -34,11 +35,9 @@ class ClimatologyForecaster(BaseForecaster):
     needs_phases = True
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
-        flags = self.config.exclude_flags_main
-        good = np.isfinite(train["Patv"].to_numpy(dtype=float))
-        for flag in flags:
-            good &= ~train[flag].to_numpy(dtype=bool)
+        good = target_valid(train, self.config.target_mask, self.config.exclude_flags_main)
         sample = train.loc[good, ["TurbID", "ts", "Patv"]].copy()
+        sample["Patv"] = target_values(train, self.config.target_mask)[good]
         if sample.empty:
             raise ValueError("No valid training rows for climatology")
         sample["phase"] = (sample["ts"].dt.total_seconds().to_numpy() // 600).astype(int) % self.config.steps_per_day

@@ -119,7 +119,7 @@ class PINForecaster(NeuralForecaster):
         _, cube = to_feature_cube(aligned, ("_wind_valid",), turbine_ids)
         return cube[:, :, 0] > 0.5
 
-    def _pin_batches(self, cube, mask_power, mask_wind, issues, shuffle):
+    def _pin_batches(self, cube, target, mask_power, mask_wind, issues, shuffle):
         w, h = self.config.input_window, self.config.horizon
         past = np.arange(w) - w + 1
         future = np.arange(1, h + 1)
@@ -130,7 +130,7 @@ class PINForecaster(NeuralForecaster):
             take = selected[first:first + self.batch]
             x = cube[take[:, None] + past[None, :]].transpose(0, 2, 3, 1)
             steps = take[:, None] + future[None, :]
-            power = cube[steps, :, p_index].transpose(0, 2, 1)
+            power = target[steps].transpose(0, 2, 1)
             wind = cube[steps, :, v_index].transpose(0, 2, 1)
             mp = mask_power[steps].transpose(0, 2, 1) & np.isfinite(power)
             mw = mask_wind[steps].transpose(0, 2, 1) & np.isfinite(wind)
@@ -183,9 +183,9 @@ class PINForecaster(NeuralForecaster):
             raise ImportError("PIN requires PyTorch; install wpf-benchmark[deep]") from exc
         self.torch = torch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        _, train_tids, train_cube, train_mask, _ = training_cube(
+        _, train_tids, train_cube, train_mask, train_target, _ = training_cube(
             train, self.features, self.config, self.scaler)
-        _, valid_tids, valid_cube, valid_mask, _ = training_cube(
+        _, valid_tids, valid_cube, valid_mask, valid_target, _ = training_cube(
             valid, self.features, self.config, self.scaler)
         if not np.array_equal(train_tids, valid_tids):
             raise ValueError("Training and validation turbine grids differ")
@@ -218,9 +218,9 @@ class PINForecaster(NeuralForecaster):
             self.name, self.device, len(train_issues), len(valid_issues), self.n_params)]
         for epoch in range(1, self.epochs + 1):
             epoch_metrics = []
-            for training, cube, mp, mw, issues in (
-                    (True, train_cube, train_mask, train_wind_mask, train_issues),
-                    (False, valid_cube, valid_mask, valid_wind_mask, valid_issues)):
+            for training, cube, target, mp, mw, issues in (
+                    (True, train_cube, train_target, train_mask, train_wind_mask, train_issues),
+                    (False, valid_cube, valid_target, valid_mask, valid_wind_mask, valid_issues)):
                 self.network.train(training)
                 sums = np.zeros(3, dtype=np.float64)
                 counts = np.zeros(3, dtype=np.int64)
@@ -228,7 +228,7 @@ class PINForecaster(NeuralForecaster):
                 total_sum = 0.0
                 n_batches = 0
                 for x, yp, yw, mask_p, mask_w in self._pin_batches(
-                        cube, mp, mw, issues, training):
+                        cube, target, mp, mw, issues, training):
                     if not mask_p.any() and not mask_w.any():
                         continue
                     xt = torch.from_numpy(x.astype(np.float32, copy=False)).to(self.device)
@@ -280,12 +280,12 @@ class PINForecaster(NeuralForecaster):
         lines.append("best_epoch={} best_valid_point_mse={:.8f}".format(
             best_epoch, best_loss))
         self.validation_metrics = self._validation_metrics(
-            valid_cube, valid_mask, valid_wind_mask, valid_issues)
+            valid_cube, valid_target, valid_mask, valid_wind_mask, valid_issues)
         if hasattr(self, "log_path"):
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self.log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    def _validation_metrics(self, cube, mask_power, mask_wind, issues) -> dict:
+    def _validation_metrics(self, cube, target, mask_power, mask_wind, issues) -> dict:
         p_index = self.features.index("Patv")
         p_lo = float(self.scaler.minimum[p_index])
         p_span = float(max(self.scaler.maximum[p_index] - p_lo, 1e-6))
@@ -297,7 +297,7 @@ class PINForecaster(NeuralForecaster):
         n_consist = 0
         from .power_curve import logistic_numpy
         for x, yp, _, mp, mw in self._pin_batches(
-                cube, mask_power, mask_wind, issues, False):
+                cube, target, mask_power, mask_wind, issues, False):
             forecast = self.predict_batch_with_wind(x)
             power, wind = forecast["power"], forecast["wind_speed"]
             true = yp * p_span + p_lo

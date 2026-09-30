@@ -43,7 +43,7 @@ class NeuralForecaster(BaseForecaster):
     def _build_network(self, torch, n_turbines: int):
         raise NotImplementedError
 
-    def _batches(self, cube, valid_target, issues, shuffle):
+    def _batches(self, cube, valid_target, target, issues, shuffle):
         w, h = self.config.input_window, self.config.horizon
         past = np.arange(w) - w + 1
         future = np.arange(1, h + 1)
@@ -52,7 +52,7 @@ class NeuralForecaster(BaseForecaster):
             for first in range(0, len(selected), self.batch):
                 take = selected[first:first + self.batch]
                 x = cube[take[:, None] + past[None, :]].transpose(0, 2, 3, 1)
-                y = cube[take[:, None] + future[None, :], :, 3].transpose(0, 2, 1)
+                y = target[take[:, None] + future[None, :]].transpose(0, 2, 1)
                 m = valid_target[take[:, None] + future[None, :]].transpose(0, 2, 1)
                 m &= np.isfinite(y)
                 yield np.nan_to_num(x), np.nan_to_num(y), m
@@ -66,7 +66,7 @@ class NeuralForecaster(BaseForecaster):
                 take = issues[batch // n]
                 turbines = batch % n
                 x = cube[take[:, None] + past[None, :], turbines[:, None]].transpose(0, 2, 1)
-                y = cube[take[:, None] + future[None, :], turbines[:, None], 3]
+                y = target[take[:, None] + future[None, :], turbines[:, None]]
                 m = valid_target[take[:, None] + future[None, :], turbines[:, None]]
                 m &= np.isfinite(y)
                 yield np.nan_to_num(x), np.nan_to_num(y), m
@@ -80,9 +80,9 @@ class NeuralForecaster(BaseForecaster):
             raise ImportError("Deep baselines require PyTorch; install wpf-benchmark[deep]") from exc
         self.torch = torch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        _, train_tids, train_cube, train_mask, _ = training_cube(
+        _, train_tids, train_cube, train_mask, train_target, _ = training_cube(
             train, self.features, self.config, self.scaler)
-        _, valid_tids, valid_cube, valid_mask, _ = training_cube(
+        _, valid_tids, valid_cube, valid_mask, valid_target, _ = training_cube(
             valid, self.features, self.config, self.scaler)
         if not np.array_equal(train_tids, valid_tids):
             raise ValueError("Training and validation turbine grids differ")
@@ -105,13 +105,13 @@ class NeuralForecaster(BaseForecaster):
             self.name, self.device, len(train_issues), len(valid_issues), self.n_params)]
         for epoch in range(1, self.epochs + 1):
             metrics = []
-            for training, c, m, issues in (
-                (True, train_cube, train_mask, train_issues),
-                (False, valid_cube, valid_mask, valid_issues)):
+            for training, c, m, y, issues in (
+                (True, train_cube, train_mask, train_target, train_issues),
+                (False, valid_cube, valid_mask, valid_target, valid_issues)):
                 self.network.train(training)
                 error_sum = 0.0
                 n_valid = 0
-                for x, y, mask in self._batches(c, m, issues, training):
+                for x, y, mask in self._batches(c, m, y, issues, training):
                     if not mask.any():
                         continue
                     xt = torch.from_numpy(x.astype(np.float32, copy=False)).to(self.device)

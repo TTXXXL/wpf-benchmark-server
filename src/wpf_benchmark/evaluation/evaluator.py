@@ -9,6 +9,7 @@ import pandas as pd
 
 from ..data.arrays import split_by_day, to_wide
 from ..data.io import load_clean
+from ..data.masks import OFFICIAL_COLUMNS
 from ..paths import ProjectPaths
 from .config import ProtocolConfig
 from .metrics import _fit_power_curves, _metrics, _safe_ratio
@@ -22,7 +23,7 @@ class Evaluator:
                  paths: Optional[ProjectPaths] = None):
         self.cfg = cfg or ProtocolConfig()
         self.paths = paths or ProjectPaths.resolve()
-        columns = ["ts", "Day", "TurbID", "Patv", "Wspd"] + list(self.cfg.exclude_flags_main)
+        columns = ["ts", "Day", "TurbID", "Patv", "Wspd"] + list(self.cfg.exclude_flags_main) + list(OFFICIAL_COLUMNS)
         if data is None:
             columns = list(dict.fromkeys(columns))
             tr = load_clean(self.paths, columns=columns,
@@ -48,7 +49,10 @@ class Evaluator:
         for flag in self.cfg.exclude_flags_main:
             excl_test |= self.dte[flag]
             excl_train |= self.dtr[flag]
-        self.valid_main = np.isfinite(self.dte["Patv"]) & ~excl_test
+        self.valid_m1 = np.isfinite(self.dte["Patv"]) & ~excl_test & ~self.dte["o_bad"]
+        self.valid_m2 = (self.dte["raw_valid"] & ~self.dte["o_bad"] &
+                         np.isfinite(self.dte["Patv_obs"]))
+        self.valid_main = self.valid_m1 if self.cfg.eval_mask == "m1" else self.valid_m2
         self.valid_all = np.isfinite(self.dte["Patv"])
         self.curve_centers, self.curves, self.curve_sigmas = _fit_power_curves(
             self.dtr["Wspd"], self.dtr["Patv"], excl_train, self.cfg)
@@ -59,6 +63,35 @@ class Evaluator:
     def _valid_stack(self, base: np.ndarray) -> np.ndarray:
         H, T = self.cfg.horizon, base.shape[0]
         return np.stack([base[h:T - H + h] for h in range(1, H + 1)], axis=2)
+
+    def truth_for(self, mask: str) -> np.ndarray:
+        if mask not in ("m1", "m2"):
+            raise ValueError("mask must be m1 or m2")
+        return self._valid_stack(self.dte["Patv_obs" if mask == "m2" else "Patv"])
+
+    def mask_sensitivity(self, preds: np.ndarray) -> Dict[str, Any]:
+        """Score identical forecasts and persistence on each target population."""
+        last = self.dte["Patv"][:self.T_eff, :, None]
+        rows = {}
+        for name, base in (("m1", self.valid_m1), ("m2", self.valid_m2)):
+            truth = self.truth_for(name)
+            valid = self._valid_stack(base) & np.isfinite(last)
+            if not valid.any():
+                rows[name] = {"n": 0, "MAE_kW": float("nan"),
+                              "RMSE_kW": float("nan"), "persistence_MAE_kW": float("nan"),
+                              "persistence_RMSE_kW": float("nan"), "SS_vs_persistence_pct": float("nan")}
+                continue
+            error = np.asarray(preds) - truth
+            perr = last - truth
+            model = _metrics(error[valid], self.cfg)
+            persistence = _metrics(perr[valid], self.cfg)
+            rows[name] = {"n": int(valid.sum()), "MAE_kW": model["MAE_kW"],
+                          "RMSE_kW": model["RMSE_kW"],
+                          "persistence_MAE_kW": persistence["MAE_kW"],
+                          "persistence_RMSE_kW": persistence["RMSE_kW"],
+                          "SS_vs_persistence_pct": (100 * (1 - model["MAE_kW"] / persistence["MAE_kW"])
+                                                      if persistence["MAE_kW"] > 0 else float("nan"))}
+        return rows
 
     def persistence_preds(self) -> np.ndarray:
         """P_hat(t+h) = P(t) for every horizon."""
@@ -85,13 +118,15 @@ class Evaluator:
         if not np.isfinite(preds).all():
             raise ValueError("Forecasts must be finite at every issue time, turbine and horizon")
         cfg, H = self.cfg, self.cfg.horizon
-        truth = self._valid_stack(self.dte["Patv"])
+        truth = self.truth_for(cfg.eval_mask) if table == "main" else self._valid_stack(self.dte["Patv"])
         valid = self._valid_stack(self.valid_main if table == "main" else self.valid_all)
         speed = self._valid_stack(self.dte["Wspd"])
         err = preds - truth
         n_valid = int(valid.sum())
         R: Dict[str, Any] = {"model": model_name, "table": table,
-                             "n_samples": n_valid, "config": asdict(cfg)}
+                             "n_samples": n_valid, "config": asdict(cfg),
+                             "target_mask": cfg.target_mask,
+                             "eval_mask": cfg.eval_mask if table == "main" else "all_clean"}
 
         R["A_turbine"] = _metrics(err[valid], cfg)
         valid_turbines = valid.sum(axis=1)
