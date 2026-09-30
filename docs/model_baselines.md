@@ -76,6 +76,8 @@ wpf-benchmark plots --all
 
 两模型现在均支持 `model.loss="mae"` / `"mse"` 以及 `model.current_power_skip=true`。开启直通时预测为 P(t)+Δh，残差输出头初始化为零；原 `agcrn.json` / `agcrn_lite.json` 保留关闭直通的对照。新四配置与完整八组消融可用 `bash scripts/rerun_graph_ablation.sh` 运行，详见[图模型残差与损失消融](图模型残差与损失消融.md)。
 
+Lite 另提供可选低功率状态混合头：`configs/agcrn_lite_low_power_mae.json` 使用 MAE 加状态分类辅助损失，将低功率分支与当前功率残差分支按未来低功率概率融合。原 Lite+MAE 与无辅助损失的结构消融均保留，运行命令及验证说明见 [Lite 低功率状态头](Lite低功率状态头.md)。
+
 命名迁移：此前 Wave 1 以 `agcrn` 写出的预测数组和指标，来自现在的 `agcrn_lite` 架构。旧产物不会自动更名；绘图或汇总时应按运行配置确认身份。新版 `agcrn` 须重新训练，不能引用旧版 `agcrn` 的分数。
 
 ## 功率曲线模块

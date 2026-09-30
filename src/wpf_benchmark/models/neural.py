@@ -43,6 +43,22 @@ class NeuralForecaster(BaseForecaster):
     def _build_network(self, torch, n_turbines: int):
         raise NotImplementedError
 
+    def _loss_sums(self, histories, target, mask):
+        """Differentiable sums over valid targets; subclasses may add auxiliaries."""
+        return self._power_loss_sums(self.network(histories), target, mask)
+
+    def _power_loss_sums(self, prediction, target, mask):
+        error = prediction[mask] - target[mask]
+        pointwise = error.abs() if self.loss_name == "mae" else error.square()
+        value = pointwise.sum()
+        j = self.features.index("Patv")
+        span = max(self.scaler.maximum[j] - self.scaler.minimum[j], 1e-6)
+        return {self.loss_name: value, "total": value,
+                "MAE_kW": error.detach().abs().sum() * float(span)}
+
+    def _training_log_lines(self):
+        return []
+
     def _normalized_zero_power(self):
         j = self.features.index("Patv")
         span = max(self.scaler.maximum[j] - self.scaler.minimum[j], 1e-6)
@@ -113,18 +129,21 @@ class NeuralForecaster(BaseForecaster):
         best_state = None
         best_epoch = 0
         no_improve = 0
+        best_metrics = None
         lines = ["model={} device={} train_windows={} valid_windows={} params={}".format(
             self.name, self.device, len(train_issues), len(valid_issues), self.n_params)]
         if hasattr(self, "current_power_skip"):
             lines.append("loss={} current_power_skip={} power_anchor=latest_finite_history "
                          "power_anchor_fallback=zero_kw".format(self.loss_name, self.current_power_skip))
+        lines.extend(self._training_log_lines())
         for epoch in range(1, self.epochs + 1):
             metrics = []
+            split_metrics = []
             for training, c, m, y, issues in (
                 (True, train_cube, train_mask, train_target, train_issues),
                 (False, valid_cube, valid_mask, valid_target, valid_issues)):
                 self.network.train(training)
-                error_sum = 0.0
+                sums = {}
                 n_valid = 0
                 for x, y, mask in self._batches(c, m, y, issues, training):
                     if not mask.any():
@@ -133,26 +152,34 @@ class NeuralForecaster(BaseForecaster):
                     yt = torch.from_numpy(y.astype(np.float32, copy=False)).to(self.device)
                     mt = torch.from_numpy(mask).to(self.device)
                     with torch.set_grad_enabled(training):
-                        pred = self.network(xt)
-                        error = pred - yt
-                        pointwise = error.abs() if self.loss_name == "mae" else error.square()
-                        loss_sum = (pointwise * mt).sum()
-                        loss = loss_sum / mt.sum().clamp(min=1)
+                        loss_sums = self._loss_sums(xt, yt, mt)
+                        loss = loss_sums["total"] / mt.sum().clamp(min=1)
                         if training:
                             optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
-                    error_sum += float(loss_sum.detach().cpu())
+                    for key, value in loss_sums.items():
+                        sums[key] = sums.get(key, 0.0) + float(value.detach().cpu())
                     n_valid += int(mt.sum().item())
                 if n_valid == 0:
                     raise ValueError("No valid targets in {} split".format(
                         "training" if training else "validation"))
-                metrics.append(error_sum / n_valid)
-            lines.append("epoch={} train_{}={:.8f} valid_{}={:.8f}".format(
-                epoch, self.loss_name, metrics[0], self.loss_name, metrics[1]))
+                averages = {key: value / n_valid for key, value in sums.items()}
+                split_metrics.append(averages)
+                metrics.append(averages[self.loss_name])
+            line = "epoch={} train_{}={:.8f} valid_{}={:.8f}".format(
+                epoch, self.loss_name, metrics[0], self.loss_name, metrics[1])
+            auxiliary_metrics = [key for key in split_metrics[0]
+                                 if key not in (self.loss_name, "MAE_kW", "total")]
+            if auxiliary_metrics:
+                for key in auxiliary_metrics + ["total"]:
+                    line += " train_{}={:.8f} valid_{}={:.8f}".format(
+                        key, split_metrics[0][key], key, split_metrics[1][key])
+            lines.append(line)
             if metrics[1] < best_loss - 1e-8:
                 best_loss = metrics[1]
                 best_epoch = epoch
+                best_metrics = dict(split_metrics[1])
                 best_state = {k: v.detach().cpu().clone() for k, v in
                               self.network.state_dict().items()}
                 no_improve = 0
@@ -162,6 +189,9 @@ class NeuralForecaster(BaseForecaster):
                     break
         self.network.load_state_dict(best_state)
         self.network.eval()
+        self.validation_metrics = dict(best_metrics, best_epoch=best_epoch,
+                                       stopped_epoch=epoch, early_stopping=self.loss_name,
+                                       power_loss_scale="training_minmax_normalized")
         lines.append("best_epoch={} best_valid_{}={:.8f} stopped_epoch={}".format(
             best_epoch, self.loss_name, best_loss, epoch))
         if hasattr(self, "log_path"):

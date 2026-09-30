@@ -31,14 +31,19 @@ class AGCRNLiteNetwork(nn.Module):
 
     def __init__(self, n_turbines: int, hidden: int, layers: int, emb: int,
                  horizon: int, temporal_stride: int, output_wind: bool = False,
-                 current_power_skip: bool = False, power_fallback: float = 0.0):
+                 current_power_skip: bool = False, power_fallback: float = 0.0,
+                 low_power_head: bool = False, low_power_threshold: float = 0.01,
+                 rated_power: float = 1.0, state_history_steps: int = 12):
         super().__init__()
+        if low_power_head and (not current_power_skip or output_wind):
+            raise ValueError("low_power_head requires current_power_skip and no wind head")
         self.hidden = hidden
         self.horizon = horizon
         self.temporal_stride = temporal_stride
         self.output_wind = output_wind
         self.current_power_skip = current_power_skip
         self.power_fallback = power_fallback
+        self.low_power_head = low_power_head
         self.node_left = nn.Parameter(torch.randn(n_turbines, emb) * 0.1)
         self.node_right = nn.Parameter(torch.randn(emb, n_turbines) * 0.1)
         self.cells = nn.ModuleList([GraphCell(4 if i == 0 else hidden, hidden)
@@ -50,11 +55,19 @@ class AGCRNLiteNetwork(nn.Module):
             nn.init.zeros_(self.readout.bias)
         if output_wind:
             self.wind_readout = nn.Linear(hidden, 1)
+        if low_power_head:
+            from .low_power import LowPowerHead
+            self.low_power = LowPowerHead(hidden, state_history_steps, power_fallback,
+                                          low_power_threshold, rated_power)
 
     def adaptive_adjacency(self):
         return torch.softmax(torch.relu(self.node_left @ self.node_right), dim=-1)
 
-    def forward(self, x):
+    def forward(self, x, return_aux: bool = False):
+        if return_aux and not self.low_power_head:
+            raise ValueError("Auxiliary state outputs require low_power_head")
+        if self.low_power_head:
+            local = self.low_power.history_features(x)
         # Capture the unpooled issue-time power before any missing-value fill.
         if self.current_power_skip:
             anchor = latest_history_power(x, fallback=self.power_fallback)
@@ -76,15 +89,25 @@ class AGCRNLiteNetwork(nn.Module):
         previous = anchor if self.current_power_skip else x[:, -1, :, 3:4]
         forecasts = []
         wind_forecasts = []
-        for _ in range(self.horizon):
+        auxiliary = {key: [] for key in ("state_logits", "low_power", "normal_power")}
+        for tick in range(self.horizon):
             state = self.decoder(previous, state, adjacency)
             residual = self.readout(state)
             # Each horizon is relative to the same P(t), not a cumulative delta.
             previous = anchor + residual if self.current_power_skip else residual
+            if self.low_power_head:
+                previous, logits, low, normal = self.low_power(
+                    state, local, (tick + 1) / self.horizon, previous)
+                if return_aux:
+                    for key, value in zip(auxiliary, (logits, low, normal)):
+                        auxiliary[key].append(value[..., 0])
             forecasts.append(previous[..., 0])
             if self.output_wind:
                 wind_forecasts.append(self.wind_readout(state)[..., 0])
         power = torch.stack(forecasts, dim=-1)
+        if return_aux:
+            return dict(power=power, **{key: torch.stack(value, dim=-1)
+                                       for key, value in auxiliary.items()})
         if not self.output_wind:
             return power
         wind = torch.stack(wind_forecasts, dim=-1)
