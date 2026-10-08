@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 import official_mask_rescore as om
-import wave1_paired_bootstrap as wb
+import paired_bootstrap as wb
 
 
 FLAG_COLUMNS = ("m_missing", "m_imputed", "m_outlier",

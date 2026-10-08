@@ -17,7 +17,7 @@
                     真值 = max(原始 Patv, 0)（与清洗 P1 规则、模型输出 >=0 一致）
 分层只用发布时刻 t 的信息：步长 h、发布时刻运行状态（原始数据）、发布时刻功率档。
 区间：按发布日重抽的配对 bootstrap，多种子模型再对种子重抽（复用
-scripts/wave1_paired_bootstrap.py 的 select_runs/_read_run/compare）。
+scripts/paired_bootstrap.py 的 select_runs/_read_run/compare）。
 
 用法（在项目根目录）：
   python scripts/official_mask_rescore.py --experiment wave1 --out reports/official_mask
@@ -37,12 +37,12 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-# wave1_paired_bootstrap.py 可与本脚本同目录，或位于当前目录的 scripts/ 下
+# paired_bootstrap.py 可与本脚本同目录，或位于当前目录的 scripts/ 下
 for _candidate in (Path(__file__).resolve().parent, Path.cwd() / "scripts"):
-    if (_candidate / "wave1_paired_bootstrap.py").is_file():
+    if (_candidate / "paired_bootstrap.py").is_file():
         sys.path.insert(0, str(_candidate))
         break
-import wave1_paired_bootstrap as wb  # noqa: E402
+import paired_bootstrap as wb  # noqa: E402
 
 NS_PER_DAY = 86_400_000_000_000
 MASK_NAMES = ("M0_repo", "M1_repo_official", "M2_official")
