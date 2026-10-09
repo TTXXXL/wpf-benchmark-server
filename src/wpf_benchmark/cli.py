@@ -64,6 +64,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     arrays = run.add_mutually_exclusive_group()
     arrays.add_argument("--save-arrays", dest="save_arrays", action="store_true", default=True)
     arrays.add_argument("--no-save-arrays", dest="save_arrays", action="store_false")
+    checkpoints = run.add_mutually_exclusive_group()
+    checkpoints.add_argument("--save-checkpoint", dest="save_checkpoint", action="store_true",
+                             default=True, help="Save the validation-best neural model (default)")
+    checkpoints.add_argument("--no-save-checkpoint", dest="save_checkpoint", action="store_false",
+                             help="Disable neural checkpoint output")
     plots = commands.add_parser("plots", help="Generate paper figures and tables")
     plots.add_argument("--figures", help="Comma-separated figure numbers, e.g. 6,7,13")
     plots.add_argument("--tables", help="Comma-separated table numbers, e.g. 1,2")
@@ -128,13 +133,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             model = get_model(args.model)(**settings.get("model", {}))
             results = eval_forecaster(model, protocol, args.tag, paths, args.batch_size,
                                       settings.get("model", {}), args.save_arrays,
-                                      seed, args.experiment, args.validation_only)
+                                      seed, args.experiment, args.validation_only,
+                                      save_checkpoint=args.save_checkpoint)
             for table, result in results.items():
                 mae = (result["validation_metrics"]["MAE_kW"] if
                        table == "validation" else result["A_turbine"]["MAE_kW"])
                 print("seed {} {}: MAE {:.2f} kW -> {}".format(
                     seed, table, mae,
                     result["result_path"]))
+            checkpoint = next(iter(results.values())).get("checkpoint")
+            if checkpoint is not None:
+                print("Best checkpoint: {}".format(paths.root / checkpoint["path"]))
         if not args.no_plots:
             from .figures import generate
             generate(paths, paths.figures / "paper")

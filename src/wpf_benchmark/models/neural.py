@@ -43,6 +43,18 @@ class NeuralForecaster(BaseForecaster):
     def _build_network(self, torch, n_turbines: int):
         raise NotImplementedError
 
+    def save_checkpoint(self, path, metadata=None):
+        """Save the validation-best network restored by fit(), for later inference."""
+        from .checkpoint import save_checkpoint
+        return save_checkpoint(self, path, metadata)
+
+    def _checkpoint_extra_state(self):
+        return {}
+
+    def _restore_checkpoint_extra_state(self, state):
+        if state:
+            raise ValueError("Unexpected checkpoint auxiliary state")
+
     def _loss_sums(self, histories, target, mask):
         """Differentiable sums over valid targets; subclasses may add auxiliaries."""
         return self._power_loss_sums(self.network(histories), target, mask)

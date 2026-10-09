@@ -125,6 +125,20 @@ def matches_job(result, job, experiment):
     return all(actual.get(key) == value for key, value in job.get("model_config", {}).items())
 
 
+def checkpoint_artifacts(root, result):
+    """Include new neural weights in output integrity checks; accept legacy runs."""
+    checkpoint = result.get("checkpoint")
+    if checkpoint is None:
+        return []
+    expected = 'reports/checkpoints/' + result['run_id'] + '_best.pt'
+    if not isinstance(checkpoint, dict) or checkpoint.get('path') != expected:
+        raise RuntimeError('Invalid checkpoint artifact path')
+    path = root / expected
+    if not path.is_file() or not path.stat().st_size or sha256(path) != checkpoint.get('sha256'):
+        raise RuntimeError('Checkpoint artifact missing or changed: ' + expected)
+    return [path]
+
+
 def collect(root, job, experiment):
     candidates = sorted((root / "reports/eval").glob(job["tag"] + "_main_*.json"),
                         key=lambda p: p.stat().st_mtime_ns, reverse=True)
@@ -138,6 +152,7 @@ def collect(root, job, experiment):
                                                 job["tag"] + "_all_", 1))
     files = [main, all_table, root / "reports/eval" / (result["run_id"] + "_arrays.npz"),
              root / "reports/train" / (result["run_id"] + ".log")]
+    files.extend(checkpoint_artifacts(root, result))
     if any(not p.is_file() or p.stat().st_size == 0 for p in files):
         raise RuntimeError("Incomplete outputs for " + job["key"])
     if read_json(all_table).get("run_id") != result["run_id"]:
@@ -155,6 +170,10 @@ def completed(root, marker, job, experiment):
         if not path.is_file() or path.stat().st_size != size:
             return False
     result = read_json(root / saved["main"])
+    try:
+        checkpoint_artifacts(root, result)
+    except RuntimeError:
+        return False
     return matches_job(result, job, experiment)
 
 

@@ -123,6 +123,7 @@ def verify_result(root, job, experiment, digests, reference=None):
         check_alignment(reference, run)
     files = [main, main.with_name(main.name.replace(job['tag'] + '_main_', job['tag'] + '_all_', 1)),
              Path(run['array_path']), root / 'reports/train' / (result['run_id'] + '.log')]
+    files.extend(suite.checkpoint_artifacts(root, result))
     if any(not path.is_file() or not path.stat().st_size for path in files):
         raise RuntimeError('Incomplete output for ' + job['key'] + '; inspect artifacts before retrying')
     if suite.read_json(files[1]).get('run_id') != result['run_id']:

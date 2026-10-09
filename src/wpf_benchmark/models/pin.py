@@ -53,6 +53,28 @@ class PINForecaster(NeuralForecaster):
                                 self.config.horizon, self.temporal_stride,
                                 output_wind=True)
 
+    def _checkpoint_extra_state(self):
+        return {"curve_params": self.torch.from_numpy(self.curve_params).clone(),
+                "wake_prior": None if self.wake_prior is None else {
+                    key: self.torch.from_numpy(value).clone()
+                    for key, value in self.wake_prior.items()},
+                "wake_convention": getattr(self, "wake_convention", None)}
+
+    def _restore_checkpoint_extra_state(self, state):
+        self.curve_params = state["curve_params"].cpu().numpy().copy()
+        if self.curve_params.shape != (len(self.turbine_ids), 4) or (
+                not np.isfinite(self.curve_params).all()):
+            raise ValueError("Invalid checkpoint power curves")
+        self.curve_params_t = self.torch.tensor(self.curve_params, device=self.device)
+        self.wake_prior = None if state["wake_prior"] is None else {
+            key: value.cpu().numpy().copy() for key, value in state["wake_prior"].items()}
+        self.wake_convention = state["wake_convention"]
+        if self.wake_prior is not None:
+            prior = self.wake_prior["A_wake_prior"]
+            self.wake_prior_t = self.torch.tensor(prior, device=self.device)
+            self.wake_row_mask_t = self.torch.tensor(
+                prior.sum(axis=1) > 0, device=self.device, dtype=self.torch.float32)
+
     def _load_curves(self, train: pd.DataFrame) -> np.ndarray:
         metadata = {}
         if hasattr(self, "paths"):
@@ -281,6 +303,9 @@ class PINForecaster(NeuralForecaster):
             best_epoch, best_loss))
         self.validation_metrics = self._validation_metrics(
             valid_cube, valid_target, valid_mask, valid_wind_mask, valid_issues)
+        self.validation_metrics.update(best_epoch=best_epoch, stopped_epoch=epoch,
+                                       early_stopping="point_mse",
+                                       best_valid_point_mse=best_loss)
         if hasattr(self, "log_path"):
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self.log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

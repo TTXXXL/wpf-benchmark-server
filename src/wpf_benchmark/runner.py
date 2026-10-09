@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from dataclasses import asdict
+import hashlib
 import random
 from time import perf_counter
 from typing import Any, Dict, Optional
@@ -43,7 +44,8 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
                     model_params: Optional[Dict[str, Any]] = None,
                     save_arrays: bool = True, seed: int = 0,
                     experiment: str = "standard",
-                    validation_only: bool = False) -> Dict[str, Any]:
+                    validation_only: bool = False,
+                    save_checkpoint: bool = True) -> Dict[str, Any]:
     """Evaluate a registered model on both tables using one prediction cube."""
     cfg = cfg or ProtocolConfig()
     paths = paths or ProjectPaths.resolve()
@@ -80,8 +82,23 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     fit_start = perf_counter()
     model.fit(train, valid)
     fit_seconds = perf_counter() - fit_start
+    checkpoint = None
+    if save_checkpoint and hasattr(model, "save_checkpoint"):
+        from .models.checkpoint import FORMAT_VERSION
+        checkpoint_path = paths.reports / "checkpoints" / (run_id + "_best.pt")
+        model.save_checkpoint(checkpoint_path, metadata={
+            "run_id": run_id, "seed": seed, "experiment": experiment,
+            "created": created.isoformat(), "data_digest": data_digest,
+            "code_digest": code_digest,
+            "config_digest": config_digest(cfg, model.model_config)})
+        checkpoint = {"path": checkpoint_path.relative_to(paths.root).as_posix(),
+                      "sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+                      "format_version": FORMAT_VERSION}
     log_header = ("target_mask={} train_target_cells={} validation_target_cells={}\n".format(
         cfg.target_mask, target_counts["train"], target_counts["validation"]))
+    if checkpoint is not None:
+        log_header += "checkpoint={} checkpoint_sha256={}\n".format(
+            checkpoint["path"], checkpoint["sha256"])
     model.log_path.parent.mkdir(parents=True, exist_ok=True)
     if model.log_path.is_file():
         model.log_path.write_text(log_header + model.log_path.read_text(encoding="utf-8"),
@@ -109,6 +126,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
                   "fit_seconds": fit_seconds, "seed": seed,
                   "experiment": experiment,
                   "data_digest": data_digest, "code_digest": code_digest}
+        result["checkpoint"] = checkpoint
         result["result_path"] = str(save_result(
             result, "{}_validation".format(label), paths.evaluation,
             timestamp=stamp))
@@ -221,6 +239,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
         result["data_digest"] = data_digest
         result["code_digest"] = code_digest
         result["run_id"] = run_id
+        result["checkpoint"] = checkpoint
         result["grid"] = {"T_eff": int(t_eff), "N": int(len(turbine_ids)),
                           "H": int(cfg.horizon), "T_test": int(len(test_times))}
         result["result_path"] = str(save_result(
