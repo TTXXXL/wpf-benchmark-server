@@ -7,7 +7,9 @@
 
 | 入口 | 用途 |
 |---|---|
-| [rerun_low_power_review.py](rerun_low_power_review.py) | 当前 8 组 × seed 0–4，共 40 次；冻结数据/代码并严格核验续跑结果 |
+| [stage3_batch.py](stage3_batch.py) | 当前阶段3：C与状态权重0.02/0.10各5种子，复用结果、断点续跑、验证集筛选、统一交付ZIP；见[执行说明](../docs/阶段3_一次跑完与统一交付.md) |
+| [stage2_delivery.py](stage2_delivery.py) | 单个原始C模型的冻结数据检查与最佳权重交付；需要单独补种子时保留 |
+| [rerun_low_power_review.py](rerun_low_power_review.py) | 原8组 × seed0–4，共40次；冻结数据/代码并严格核验续跑结果 |
 | [review_diagnostics/](review_diagnostics/README.md) | P0、原始标签、M1/M2 同预测复评分、历史群体、锚点与版本审计；只读已有结果 |
 | [paired_bootstrap.py](paired_bootstrap.py) | 通用日块/种子配对检验，默认 standard/auto；`--preset wave1` 提供历史固定预设 |
 | [analyze_persistence.py](analyze_persistence.py) | 将 persistence 主表与附表 JSON 生成为中文解读 |
