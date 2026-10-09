@@ -6,6 +6,7 @@ from .persistence import PersistenceForecaster
 from .naive import (SeasonalPersistenceForecaster, ClimatologyForecaster,
                     TrendPersistenceForecaster, FarmMeanPersistenceForecaster)
 from .linear import LinearForecaster
+from .increment import LinearIncrementForecaster, TCNIncrementForecaster
 from .gbdt import GBDTForecaster
 from .lstm_seq2seq import LSTMSeq2SeqForecaster
 from .patchtst import PatchTSTForecaster
@@ -17,6 +18,7 @@ __all__ = ["BaseForecaster", "MODEL_REGISTRY", "get_model", "register_model",
            "PersistenceForecaster", "SeasonalPersistenceForecaster",
            "ClimatologyForecaster", "TrendPersistenceForecaster",
            "FarmMeanPersistenceForecaster", "LinearForecaster", "GBDTForecaster",
+           "LinearIncrementForecaster", "TCNIncrementForecaster",
            "LSTMSeq2SeqForecaster", "PatchTSTForecaster", "AGCRNForecaster",
            "AGCRNLiteForecaster",
            "PINForecaster", "VARIANTS"]

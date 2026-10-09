@@ -45,10 +45,13 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
                     save_arrays: bool = True, seed: int = 0,
                     experiment: str = "standard",
                     validation_only: bool = False,
-                    save_checkpoint: bool = True) -> Dict[str, Any]:
+                    save_checkpoint: bool = True,
+                    save_validation_arrays: bool = False) -> Dict[str, Any]:
     """Evaluate a registered model on both tables using one prediction cube."""
     cfg = cfg or ProtocolConfig()
     paths = paths or ProjectPaths.resolve()
+    if save_validation_arrays and not validation_only:
+        raise ValueError("save_validation_arrays requires validation_only")
     from .figures.io import append_index, config_digest, result_provenance
     data_digest, code_digest = result_provenance(paths)
     seed_all(seed)
@@ -113,20 +116,30 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     del train, valid
 
     if validation_only:
-        if model.validation_metrics is None:
+        dense = None
+        if save_validation_arrays:
+            from .evaluation.validation_predictions import save_dense_validation
+            dense = save_dense_validation(model, cfg, paths, run_id, batch_size)
+        if model.validation_metrics is None and dense is None:
             raise ValueError("This model does not provide validation metrics")
         result = {"model": model.name, "table": "validation", "run_id": run_id,
                   "config": asdict(cfg), "model_config": model.model_config,
                   "target_mask": cfg.target_mask, "validation_mask": cfg.target_mask,
                   "eval_mask": None,
                   "target_counts": target_counts,
-                  "validation_metrics": model.validation_metrics,
+                  "validation_metrics": (model.validation_metrics if model.validation_metrics is not None
+                                         else dense["groups"]["overall"]["model"]),
                   "model_size": {"n_params": int(model.n_params),
                                  "flops_per_sample": model.flops_per_sample},
                   "fit_seconds": fit_seconds, "seed": seed,
                   "experiment": experiment,
                   "data_digest": data_digest, "code_digest": code_digest}
         result["checkpoint"] = checkpoint
+        result["features"] = list(features)
+        result["history_scale"] = model.history_scale
+        result["scaler_source"] = "sdwpf_meta.json" if use_meta else "configured_training_days"
+        if dense is not None:
+            result["dense_validation"] = dense
         result["result_path"] = str(save_result(
             result, "{}_validation".format(label), paths.evaluation,
             timestamp=stamp))

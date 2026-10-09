@@ -7,7 +7,8 @@
 
 | 入口 | 用途 |
 |---|---|
-| [stage3_batch.py](stage3_batch.py) | 当前阶段3：C与状态权重0.02/0.10各5种子，复用结果、断点续跑、验证集筛选、统一交付ZIP；见[执行说明](../docs/阶段3_一次跑完与统一交付.md) |
+| [increment_batch.py](increment_batch.py) | 当前L0/L1线性MAE与D0/D1直接多步TCN各3种子，密集验证、冻结核验、完成项复用和统一交付；见[执行说明](../docs/持续性增量实验_运行与交付.md) |
+| [stage3_batch.py](stage3_batch.py) | 阶段3：C与状态权重0.02/0.10各5种子，复用结果、断点续跑、验证集筛选、统一交付ZIP；见[执行说明](../docs/阶段3_一次跑完与统一交付.md) |
 | [stage2_delivery.py](stage2_delivery.py) | 单个原始C模型的冻结数据检查与最佳权重交付；需要单独补种子时保留 |
 | [rerun_low_power_review.py](rerun_low_power_review.py) | 原8组 × seed0–4，共40次；冻结数据/代码并严格核验续跑结果 |
 | [review_diagnostics/](review_diagnostics/README.md) | P0、原始标签、M1/M2 同预测复评分、历史群体、锚点与版本审计；只读已有结果 |
