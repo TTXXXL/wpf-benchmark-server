@@ -9,3 +9,9 @@ dist/
 data/raw/
 data/processed/
 reports/
+
+scripts/local/
+
+docs/local/
+
+.test-tmp/

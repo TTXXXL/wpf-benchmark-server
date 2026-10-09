@@ -43,7 +43,7 @@ def rescore(paths: ProjectPaths, run_id: str, eval_mask: str,
     source_cfg = dict(source["config"])
     if source_cfg.get("target_mask") not in ("m1", "m2") or (
             source_cfg.get("eval_mask") not in ("m1", "m2")):
-        raise ValueError("Legacy M0 run: use scripts/official_mask_rescore.py for historical runs")
+        raise ValueError("Legacy M0 run: use scripts/local/official_mask_rescore.py in the local development copy")
     if eval_mask not in ("m1", "m2"):
         raise ValueError("eval_mask must be m1 or m2")
     source_cfg["wind_bins"] = tuple(tuple(x) for x in source_cfg["wind_bins"])

@@ -54,8 +54,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                      help="Main test scoring definition (default: M1)")
     run.add_argument("--validation-only", action="store_true",
                      help="Train and save validation metrics without loading test data")
-    run.add_argument("--save-validation-arrays", action="store_true",
-                     help="Export dense validation forecasts; requires --validation-only")
     run.add_argument("--no-plots", action="store_true",
                      help="Skip automatic paper-figure refresh after this run")
     re = commands.add_parser("rescore", help="Score saved M1/M2 forecasts under another mask")
@@ -136,17 +134,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             results = eval_forecaster(model, protocol, args.tag, paths, args.batch_size,
                                       settings.get("model", {}), args.save_arrays,
                                       seed, args.experiment, args.validation_only,
-                                      save_checkpoint=args.save_checkpoint,
-                                      save_validation_arrays=args.save_validation_arrays)
+                                      save_checkpoint=args.save_checkpoint)
             for table, result in results.items():
                 mae = (result["validation_metrics"]["MAE_kW"] if
                        table == "validation" else result["A_turbine"]["MAE_kW"])
                 print("seed {} {}: MAE {:.2f} kW -> {}".format(
                     seed, table, mae,
                     result["result_path"]))
-                if result.get("dense_validation"):
-                    dense_mae = result["dense_validation"]["groups"]["overall"]["model"]["MAE_kW"]
-                    print("seed {} dense validation: MAE {:.2f} kW".format(seed, dense_mae))
             checkpoint = next(iter(results.values())).get("checkpoint")
             if checkpoint is not None:
                 print("Best checkpoint: {}".format(paths.root / checkpoint["path"]))

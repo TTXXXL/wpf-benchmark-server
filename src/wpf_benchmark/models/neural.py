@@ -109,7 +109,7 @@ class NeuralForecaster(BaseForecaster):
                 y = target[take[:, None] + future[None, :], turbines[:, None]]
                 m = valid_target[take[:, None] + future[None, :], turbines[:, None]]
                 m &= np.isfinite(y)
-                yield self._network_histories(x), np.nan_to_num(y), m
+                yield np.nan_to_num(x), np.nan_to_num(y), m
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
         if valid is None or valid.empty:
@@ -151,20 +151,15 @@ class NeuralForecaster(BaseForecaster):
         for epoch in range(1, self.epochs + 1):
             metrics = []
             split_metrics = []
-            split_counts = []
             for training, c, m, y, issues in (
                 (True, train_cube, train_mask, train_target, train_issues),
                 (False, valid_cube, valid_mask, valid_target, valid_issues)):
                 self.network.train(training)
                 sums = {}
                 n_valid = 0
-                used_batches = used_samples = skipped_batches = 0
                 for x, y, mask in self._batches(c, m, y, issues, training):
                     if not mask.any():
-                        skipped_batches += 1
                         continue
-                    used_batches += 1
-                    used_samples += len(x)
                     xt = torch.from_numpy(x.astype(np.float32, copy=False)).to(self.device)
                     yt = torch.from_numpy(y.astype(np.float32, copy=False)).to(self.device)
                     mt = torch.from_numpy(mask).to(self.device)
@@ -183,8 +178,6 @@ class NeuralForecaster(BaseForecaster):
                         "training" if training else "validation"))
                 averages = {key: value / n_valid for key, value in sums.items()}
                 split_metrics.append(averages)
-                split_counts.append({"batches": used_batches, "samples": used_samples,
-                                     "target_cells": n_valid, "skipped_batches": skipped_batches})
                 metrics.append(averages[self.loss_name])
             line = "epoch={} train_{}={:.8f} valid_{}={:.8f}".format(
                 epoch, self.loss_name, metrics[0], self.loss_name, metrics[1])
@@ -194,15 +187,11 @@ class NeuralForecaster(BaseForecaster):
                 for key in auxiliary_metrics + ["total"]:
                     line += " train_{}={:.8f} valid_{}={:.8f}".format(
                         key, split_metrics[0][key], key, split_metrics[1][key])
-            for label, counts in zip(("train", "valid"), split_counts):
-                line += " " + " ".join("{}_{}={}".format(label, key, value)
-                                         for key, value in counts.items())
             lines.append(line)
             if metrics[1] < best_loss - 1e-8:
                 best_loss = metrics[1]
                 best_epoch = epoch
                 best_metrics = dict(split_metrics[1])
-                best_counts = split_counts
                 best_state = {k: v.detach().cpu().clone() for k, v in
                               self.network.state_dict().items()}
                 no_improve = 0
@@ -214,8 +203,7 @@ class NeuralForecaster(BaseForecaster):
         self.network.eval()
         self.validation_metrics = dict(best_metrics, best_epoch=best_epoch,
                                        stopped_epoch=epoch, early_stopping=self.loss_name,
-                                       power_loss_scale="training_minmax_normalized",
-                                       best_epoch_counts=dict(zip(("train", "validation"), best_counts)))
+                                       power_loss_scale="training_minmax_normalized")
         lines.append("best_epoch={} best_valid_{}={:.8f} stopped_epoch={}".format(
             best_epoch, self.loss_name, best_loss, epoch))
         if hasattr(self, "log_path"):

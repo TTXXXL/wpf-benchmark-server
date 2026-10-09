@@ -1,35 +1,16 @@
+# 训练脚本索引
 
-# 脚本索引
+单模型训练、预处理、权重保存和标准评估使用wpf-benchmark CLI。这里保留需要在服务器运行的批跑入口；更新代码本身不会启动训练。
 
-所有命令默认从项目根目录执行。本文区分批量训练、冻结预测的复核和本地维护；单模型训练、清洗、自检与作图使用 `wpf-benchmark` CLI。
-
-## 本轮训练与结果复核
-
-| 入口 | 用途 |
+| 文件 | 用途 |
 |---|---|
-| [increment_batch.py](increment_batch.py) | 当前L0/L1线性MAE与D0/D1直接多步TCN各3种子，密集验证、冻结核验、完成项复用和统一交付；见[执行说明](../docs/持续性增量实验_运行与交付.md) |
-| [stage3_batch.py](stage3_batch.py) | 阶段3：C与状态权重0.02/0.10各5种子，复用结果、断点续跑、验证集筛选、统一交付ZIP；见[执行说明](../docs/阶段3_一次跑完与统一交付.md) |
-| [stage2_delivery.py](stage2_delivery.py) | 单个原始C模型的冻结数据检查与最佳权重交付；需要单独补种子时保留 |
-| [rerun_low_power_review.py](rerun_low_power_review.py) | 原8组 × seed0–4，共40次；冻结数据/代码并严格核验续跑结果 |
-| [review_diagnostics/](review_diagnostics/README.md) | P0、原始标签、M1/M2 同预测复评分、历史群体、锚点与版本审计；只读已有结果 |
-| [paired_bootstrap.py](paired_bootstrap.py) | 通用日块/种子配对检验，默认 standard/auto；`--preset wave1` 提供历史固定预设 |
-| [analyze_persistence.py](analyze_persistence.py) | 将 persistence 主表与附表 JSON 生成为中文解读 |
+| [rerun_low_power_review.py](rerun_low_power_review.py) | 已有八组×五种子，复用冻结处理数据，按需重跑与续跑 |
+| [rerun_graph_ablation.py](rerun_graph_ablation.py)、[rerun_graph_ablation.sh](rerun_graph_ablation.sh) | AGCRN/Lite、损失和当前功率开关的匹配消融套件 |
+| [rerun_m1.py](rerun_m1.py)、[rerun_m1.sh](rerun_m1.sh) | 旧13模型41次M1套件及批跑公共执行工具 |
+| [artifact_checks.py](artifact_checks.py) | 批跑依赖的结果读取、完整性和数组对齐函数，无独立分析命令 |
 
-本轮 A/B/C 同为 agcrn_lite，通用 bootstrap 不自动按 tag 区分配置。先按 [40 次说明](../docs/低功率40次统一重跑.md)使用专用运行清单；模型和统计口径见 [评估分析](../docs/评估与结果分析.md)。
+运行参数与准备条件见[批跑说明](../docs/低功率40次统一重跑.md)和[模型与消融](../docs/模型与消融.md)。批跑内的身份、哈希和完成项检查保留，避免错误续跑。
 
-## 其他仍可用的实验套件
+离线审计、bootstrap、M1/M2复评分、历史分组及阶段2/3验证交付入口集中在开发版scripts/local/；其说明位于本地docs/local/。这些文件不进入服务器Git或上传ZIP。
 
-| 入口 | 用途与保留理由 |
-|---|---|
-| [rerun_m1.py](rerun_m1.py)、[rerun_m1.sh](rerun_m1.sh) | 旧 13 模型、41 次 M1 基线套件；Python 文件还提供当前两个批跑入口依赖的执行与指纹工具 |
-| [rerun_graph_ablation.py](rerun_graph_ablation.py)、[rerun_graph_ablation.sh](rerun_graph_ablation.sh) | 架构 × 损失 × current_power_skip 的图模型实验，包含 AGCRN+MSE；矩阵与本轮低功率八组不同 |
-| [official_mask_rescore.py](official_mask_rescore.py) | 从原始观测重评历史 M0/Wave 1 数组，复核旧结果中的官方规则影响；不接收新 M1/M2 运行 |
-| [mask_rule_ablation.py](mask_rule_ablation.py) | 历史 M0 的逐规则、重叠及新增群体诊断；依赖前一项，保留历史证据复现能力 |
-
-两个 `.sh` 文件负责定位项目、设置 PYTHONPATH 并使用已激活的解释器，不含另一套训练逻辑。M1/图模型旧套件首次运行会重建数据；本轮入口按说明复用数据或显式 `--prepare`，不能混用准备策略。
-
-## 本地维护
-
-[sync_server_project.py](sync_server_project.py) 从开发版生成上传副本与 ZIP，并提供 `--check`。此维护脚本不随上传包分发；本地验证后再运行，步骤见 [部署与同步](../docs/服务器部署与同步.md)。
-
-2026-10-08 删除一次性合成样图生成脚本，将配对检验的实现与入口合并到 `paired_bootstrap.py`。合成图的测试夹具与图件测试保留在开发版 `tests/`。历史 Wave 1 调用统一改为 `python scripts/paired_bootstrap.py --preset wave1 ...`，数值计算和统计定义保持原实现。
+sync_server_project.py也仅在开发版保留。它使用文档与脚本白名单生成上传副本，操作见[部署与同步](../docs/服务器部署与同步.md)。新增本地文件不会自动被同步到服务器。

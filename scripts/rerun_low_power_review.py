@@ -23,7 +23,7 @@ CELLS = (
     ('B', 'agcrn_lite', 'agcrn_lite_low_power_no_aux', 'lite_mixture_no_aux'),
     ('C', 'agcrn_lite', 'agcrn_lite_low_power_mae', 'lite_low_power'),
 )
-EXTRA_SOURCES = ('scripts/rerun_low_power_review.py', 'scripts/review_diagnostics/common.py')
+EXTRA_SOURCES = ('scripts/rerun_low_power_review.py', 'scripts/artifact_checks.py')
 PROTOCOL = dict(target_mask='m1', eval_mask='m1', input_window=144,
                 horizon=12, train_days=196, val_days=25)
 
@@ -101,7 +101,7 @@ def verify_freeze(root, jobs, manifest):
 
 
 def verify_result(root, job, experiment, digests, reference=None):
-    from review_diagnostics.common import check_alignment, load_run
+    from artifact_checks import check_alignment, load_run
     from wpf_benchmark.evaluation.config import ProtocolConfig
     candidates = []
     for path in (root / 'reports/eval').glob(job['tag'] + '_main_*.json'):
