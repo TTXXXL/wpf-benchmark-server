@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from typing import Optional, Sequence
 
 from .neural import NeuralForecaster
 from .registry import register_model
@@ -10,6 +11,7 @@ from .registry import register_model
 @register_model("agcrn_lite")
 class AGCRNLiteForecaster(NeuralForecaster):
     graph_model = True
+    base_features = ("Wspd", "Wsin", "Wcos", "Patv")
 
     def __init__(self, hidden: int = 64, layers: int = 2, emb: int = 10,
                  temporal_stride: int = 6, dropout: float = 0.1,
@@ -17,7 +19,8 @@ class AGCRNLiteForecaster(NeuralForecaster):
                  patience: int = 5, stride: int = 6, weight_decay: float = 0.0,
                  loss: str = "mse", current_power_skip: bool = False,
                  low_power_head: bool = False, low_power_threshold_kw: float = 10.0,
-                 state_loss_weight: float = 0.05, state_history_steps: int = 12):
+                 state_loss_weight: float = 0.05, state_history_steps: int = 12,
+                 input_features: Optional[Sequence[str]] = None):
         super().__init__(hidden, layers, dropout, lr, batch, epochs, patience,
                          stride, weight_decay)
         self.emb = int(emb)
@@ -42,18 +45,37 @@ class AGCRNLiteForecaster(NeuralForecaster):
         if isinstance(state_history_steps, bool) or not isinstance(state_history_steps, int) or state_history_steps <= 0:
             raise ValueError("state_history_steps must be a positive integer")
         self.state_history_steps = state_history_steps
+        # The power anchor and local state head retain their established indices.
+        # Additional historical channels enter only the pooled graph encoder.
+        if input_features is not None:
+            if not isinstance(input_features, (list, tuple)) or any(
+                    not isinstance(name, str) for name in input_features):
+                raise ValueError("input_features must be a list or tuple of feature names")
+            chosen = tuple(input_features)
+            if (chosen[:4] != self.base_features or len(set(chosen)) != len(chosen) or
+                    any(name not in ("Pab1", "Pab2", "Pab3") for name in chosen[4:])):
+                raise ValueError("input_features must preserve Wspd,Wsin,Wcos,Patv first, "
+                                 "with distinct optional Pab1/Pab2/Pab3 channels")
+            self.input_features = chosen
+        else:
+            self.input_features = None
+        self.features = self.base_features if self.input_features is None else self.input_features
         if self.emb <= 0 or self.temporal_stride <= 0:
             raise ValueError("emb and temporal_stride must be positive")
 
     @property
     def model_config(self) -> dict:
-        return dict(super().model_config, emb=self.emb,
+        options = dict(super().model_config, emb=self.emb,
                     temporal_stride=self.temporal_stride, loss=self.loss_name,
                     current_power_skip=self.current_power_skip,
                     low_power_head=self.low_power_head,
                     low_power_threshold_kw=self.low_power_threshold_kw,
                     state_loss_weight=self.state_loss_weight,
                     state_history_steps=self.state_history_steps)
+        # Keep the legacy default recipe and checkpoint payload unchanged.
+        if self.input_features is not None:
+            options["input_features"] = list(self.input_features)
+        return options
 
     def configure(self, config, scaler):
         super().configure(config, scaler)
@@ -83,9 +105,11 @@ class AGCRNLiteForecaster(NeuralForecaster):
         return sums
 
     def _training_log_lines(self):
+        inputs = (["input_features={} input_size={}".format(
+            ",".join(self.features), len(self.features))] if self.input_features is not None else [])
         if not self.low_power_head:
-            return []
-        return ["low_power_head=True low_power_threshold_kw={} state_loss_weight={} "
+            return inputs
+        return inputs + ["low_power_head=True low_power_threshold_kw={} state_loss_weight={} "
                 "state_history_steps={} early_stopping={} state_target=power_lt_threshold "
                 "state_mask=target_mask".format(self.low_power_threshold_kw, self.state_loss_weight,
                                                self.state_history_steps, self.loss_name)]
@@ -100,4 +124,5 @@ class AGCRNLiteForecaster(NeuralForecaster):
                                 low_power_head=self.low_power_head,
                                 low_power_threshold=self._normalized_power(self.low_power_threshold_kw),
                                 rated_power=self._normalized_power(self.config.rated_power_kw),
-                                state_history_steps=self.state_history_steps)
+                                state_history_steps=self.state_history_steps,
+                                input_size=len(self.features))

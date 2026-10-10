@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "experiment": "lite_pitch_20261010_v1",
+  "tag_prefix": "pitch",
+  "model": "agcrn_lite",
+  "config": "configs/agcrn_lite_low_power_mae.json",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": [
+    {
+      "name": "C_inputs4",
+      "target_mask": "m1"
+    },
+    {
+      "name": "C_pitch7",
+      "target_mask": "m1",
+      "config": "configs/agcrn_lite_low_power_pitch_mae.json"
+    }
+  ],
+  "digests": {
+    "data_digest": "033fb4a7a9e0daf8",
+    "code_digest": "611636741d7a661e"
+  },
+  "frozen_files": {
+    "data/processed/sdwpf_clean.parquet": "f39562038b8cffd654c4cf09c18d15aecd5b0c50c43958f95d27893f4dcd1c82",
+    "data/processed/sdwpf_meta.json": "0159403e88755daec5e060ff092304956d81b40a0166c71cf0cdaaa6b46a40a3"
+  },
+  "recipe_sha256": {
+    "configs/agcrn_lite_low_power_mae.json": "a0ccb879204b08d1163aa6aee680853f21fa475bb640a0f17d819e6f76980f6d",
+    "configs/agcrn_lite_low_power_pitch_mae.json": "60a09373a3cc0d4e13c41a4a7ea646f8ca12a01ad2f253aa2e48b4c86bf6123e"
+  },
+  "verify_features": true,
+  "purpose": "A pilot: paired Lite C historical pitch input ablation, four baseline inputs versus the same four plus Pab1/Pab2/Pab3, three seeds and six fresh validation-only trainings.",
+  "controls": "Retrain both arms under the same updated code/environment. Keep M1 targets and M1 early stopping, MAE, state BCE coefficient 0.05, 144-step history, stride and optimizer fixed. No changes to pooling, local state features, masks or preprocessing. Append pitch only to the pooled encoder.",
+  "analysis": {
+    "primary": "Dense M1 MAE among latest-finite historical power anchors <10 kW, scored against the matched fresh C_inputs4 seed.",
+    "mandatory_groups": [
+      "low_anchor_stays_below10",
+      "low_anchor_recovers_ge10",
+      "M1_overall",
+      "M1_h1",
+      "M2",
+      "S1_posthoc"
+    ],
+    "sensitivity": [
+      "unique_targets",
+      "equal_low_anchor_event_weight",
+      "historical_pitch_gt89_vs_le89",
+      "raw_pitch_history_complete_vs_missing",
+      "large_blade_pitch_difference"
+    ],
+    "bounds": "Pitch associations can reflect target-mask selection and imputation; S1 is a posthoc diagnosis and cannot select a deployed model. Six runs are a pilot, not a formal interaction or significance study."
+  },
+  "decision": "Return all six runs. Do not choose on native early-stop scores, auto-evaluate test, or append seeds. Assess paired dense-validation primary and mandatory subgroup effects locally; no new numeric acceptance threshold is introduced by this code change."
+}

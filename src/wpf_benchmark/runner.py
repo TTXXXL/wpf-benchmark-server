@@ -118,6 +118,8 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
         if model.validation_metrics is None:
             raise ValueError("This model does not provide validation metrics")
         result = {"model": model.name, "table": "validation", "run_id": run_id,
+                  "features": list(features), "history_scale": model.history_scale,
+                  "scaler_source": "sdwpf_meta.json" if use_meta else "configured_training_days",
                   "config": asdict(cfg), "model_config": model.model_config,
                   "target_mask": cfg.target_mask, "validation_mask": cfg.early_stop_mask,
                   "eval_mask": None,

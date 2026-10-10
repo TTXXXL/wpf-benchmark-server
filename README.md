@@ -2,14 +2,15 @@
 
 默认使用过去144个十分钟观测，预测134台机组未来12步有功功率。训练、验证、测试按196/25/24天划分，默认M1目标与评分。
 
-当前实验使用现有 C 模型比较 M1/M2 训练与早停口径，各三个种子。服务器更新后直接运行：
+当前 A 实验比较 Lite C 的四个历史输入与追加 Pab1、Pab2、Pab3 的七个输入，seed 0、1、2 配对，共六次验证训练。服务器更新后运行：
 
 ```bash
 git pull --ff-only
-python -u scripts/run_study.py --study m2_weighted
+python scripts/run_study.py --study lite_pitch --preflight
+python -u scripts/run_study.py --study lite_pitch
 ```
 
-完成后交回 `reports/studies/m2_weighted_20261010_v1/m2_weighted_20261010_v1_delivery.zip`，由本地统一分析。本轮九次训练固定 M1 早停，比较 M2 额外目标权重 1、0.5、0.25。中断后执行同一命令可核验并续跑。数据与模型源码必须匹配计划冻结指纹，详见[实验训练](docs/实验训练.md)。
+完成后交回 `reports/studies/lite_pitch_20261010_v1/lite_pitch_20261010_v1_delivery.zip`，由本地统一分析密集 M1 低锚点主终点及持续低功率/恢复取舍。保留冻结处理数据，预检失败时交回报错，不重新清洗。中断后执行同一条训练命令可核验并续跑；本轮不运行测试或自动追加种子，详见[实验训练](docs/实验训练.md)。
 
 ## 文档
 

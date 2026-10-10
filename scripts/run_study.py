@@ -40,12 +40,14 @@ def load_plan(root, study):
     if not plan["seeds"] or len(set(plan["seeds"])) != len(plan["seeds"]) or any(
             type(seed) is not int or not 0 <= seed < 2 ** 32 for seed in plan["seeds"]):
         raise ValueError("Study seeds must be distinct uint32 integers")
-    recipe = suite.read_json(relative_file(root, plan["config"]))
     from wpf_benchmark.evaluation.config import ProtocolConfig
+    from wpf_benchmark.models import get_model
     jobs = []
     for variant in plan["variants"]:
         if not re.fullmatch(NAME, variant["name"]) or variant["target_mask"] not in ("m1", "m2"):
             raise ValueError("Invalid study variant")
+        config_name = variant.get("config", plan["config"])
+        recipe = suite.read_json(relative_file(root, config_name))
         protocol = dict(recipe.get("protocol", {}), target_mask=variant["target_mask"], eval_mask="m1")
         for option in ("validation_mask", "m2_extra_target_weight"):
             if option in variant:
@@ -56,7 +58,7 @@ def load_plan(root, study):
             tag = "{}_{}".format(plan.get("tag_prefix", plan["experiment"]), key)
             if not re.fullmatch(r"[A-Za-z0-9_-]+", tag):
                 raise ValueError("Invalid job tag")
-            args = ["run", "--model", plan["model"], "--config", plan["config"],
+            args = ["run", "--model", plan["model"], "--config", config_name,
                     "--target-mask", variant["target_mask"], "--eval-mask", "m1",
                     "--seed", str(seed), "--repeat", "1", "--experiment", plan["experiment"],
                     "--tag", tag, "--validation-only", "--save-checkpoint",
@@ -66,6 +68,8 @@ def load_plan(root, study):
             if "m2_extra_target_weight" in variant:
                 args.extend(["--m2-extra-target-weight", str(effective.m2_extra_target_weight)])
             jobs.append(dict(key=key, tag=tag, seed=seed, model=plan["model"],
+                             config=config_name, features=list(recipe["model"].get(
+                                 "input_features", get_model(plan["model"]).features)),
                              target_mask=variant["target_mask"], validation_mask=effective.early_stop_mask,
                              args=args, model_config=recipe["model"], protocol=protocol))
     if not jobs or len({job["key"] for job in jobs}) != len(jobs):
@@ -100,8 +104,13 @@ def snapshot(root, study, plan, versions):
     digests = dict(data_digest=data_hash.hexdigest()[:16], code_digest=code_hash.hexdigest()[:16])
     if digests != plan["digests"]:
         raise RuntimeError("Data or model source differs from the approved study")
-    for name in ("scripts/run_study.py", "scripts/rerun_m1.py", "pyproject.toml",
-                 "configs/studies/" + study + ".json", plan["config"]):
+    recipes = {plan["config"]} | {variant.get("config", plan["config"]) for variant in plan["variants"]}
+    for name in sorted(recipes):
+        expected = plan.get("recipe_sha256", {}).get(name)
+        if expected is not None and suite.sha256(relative_file(root, name)) != expected:
+            raise RuntimeError("Approved recipe differs: " + name)
+    for name in ["scripts/run_study.py", "scripts/rerun_m1.py", "pyproject.toml",
+                 "configs/studies/" + study + ".json"] + sorted(recipes):
         sources[name] = suite.sha256(relative_file(root, name))
     return dict(schema=1, study=study, plan=plan, sources=sources,
                 processed=processed, digests=digests, environment=versions)
@@ -127,6 +136,9 @@ def verify_result(root, job, identity):
     if result.get("config") != canonical or any(
             result.get("model_config", {}).get(k) != v for k, v in job["model_config"].items()):
         raise RuntimeError("Result training configuration differs: " + job["key"])
+    if identity["plan"].get("verify_features", False) and (
+            result.get("features") != job["features"] or result.get("history_scale") != "normalized"):
+        raise RuntimeError("Result input features differ: " + job["key"])
     run_id = result.get("run_id", "")
     if not re.fullmatch(re.escape(job["tag"]) + r"_\d{8}_\d{6}_\d{6}", run_id):
         raise RuntimeError("Invalid run ID")
@@ -162,19 +174,21 @@ def write_delivery(root, directory, jobs, identity):
             raise RuntimeError("Study is incomplete: " + job["key"])
         files.update(checked["hashes"])
         result = suite.read_json(root / checked["result"])
-        rows.append([job["key"], job["target_mask"], job["validation_mask"],
+        rows.append([job["key"], job["config"], ",".join(job["features"]),
+                     job["target_mask"], job["validation_mask"],
                      job["protocol"].get("m2_extra_target_weight", 1.0), job["seed"],
                      result["validation_metrics"]["MAE_kW"], result["run_id"], checked["result"]])
     summary = directory / "results.csv"
     with summary.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["job", "training_mask", "early_stop_mask", "m2_extra_target_weight", "seed",
+        writer.writerow(["job", "model_config_file", "input_features", "training_mask", "early_stop_mask", "m2_extra_target_weight", "seed",
                          "native_early_stop_MAE_kW", "run_id", "validation_json"])
         writer.writerows(rows)
     for path in [directory / "manifest.json", summary] + sorted(directory.glob("*.done.json")) + \
             sorted(directory.glob("*.console.log")):
         files[path.relative_to(root).as_posix()] = suite.sha256(path)
-    for name in (identity["plan"]["config"], "configs/studies/" + identity["study"] + ".json"):
+    for name in sorted({identity["plan"]["config"], "configs/studies/" + identity["study"] + ".json"} |
+                       {job["config"] for job in jobs}):
         files[name] = suite.sha256(root / name)
     delivery_manifest = directory / "delivery_manifest.json"
     suite.save_json(delivery_manifest, dict(schema=1, jobs=len(jobs),
@@ -237,6 +251,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study", default="m2_robustness", help="Plan in configs/studies/<name>.json")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without writing or training")
+    parser.add_argument("--preflight", action="store_true", help="Verify data/code/recipes/environment without training or writing")
     parser.add_argument("--collect-only", action="store_true", help="Verify and repackage; never train")
     args = parser.parse_args(argv)
     sys.path.insert(0, str(ROOT / "src"))
@@ -248,6 +263,11 @@ def main(argv=None):
         return 0
     sys.path.insert(0, str(ROOT / "src"))
     versions = suite.dependencies(require_gbdt=False)
+    if args.preflight:
+        identity = snapshot(ROOT, args.study, plan, versions)
+        print("PREFLIGHT PASS: data={} code={}".format(
+            identity["digests"]["data_digest"], identity["digests"]["code_digest"]), flush=True)
+        return 0
     import fcntl  # Linux server; share the existing batch lock.
     lock_path = ROOT / "reports/rerun_m1/.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)

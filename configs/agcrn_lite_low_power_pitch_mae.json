@@ -1,0 +1,13 @@
+{
+  "protocol": {"target_mask": "m1", "eval_mask": "m1"},
+  "model": {
+    "hidden": 64, "layers": 2, "emb": 10, "temporal_stride": 6,
+    "loss": "mae", "current_power_skip": true,
+    "low_power_head": true, "low_power_threshold_kw": 10.0,
+    "state_loss_weight": 0.05, "state_history_steps": 12,
+    "dropout": 0.0, "lr": 0.001, "batch": 16, "epochs": 30,
+    "patience": 5, "stride": 6, "weight_decay": 0.0,
+    "input_features": ["Wspd", "Wsin", "Wcos", "Patv", "Pab1", "Pab2", "Pab3"]
+  },
+  "seed": 0
+}

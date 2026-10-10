@@ -33,8 +33,11 @@ class AGCRNLiteNetwork(nn.Module):
                  horizon: int, temporal_stride: int, output_wind: bool = False,
                  current_power_skip: bool = False, power_fallback: float = 0.0,
                  low_power_head: bool = False, low_power_threshold: float = 0.01,
-                 rated_power: float = 1.0, state_history_steps: int = 12):
+                 rated_power: float = 1.0, state_history_steps: int = 12,
+                 input_size: int = 4):
         super().__init__()
+        if isinstance(input_size, bool) or not isinstance(input_size, int) or input_size < 4:
+            raise ValueError("input_size must be an integer >= 4")
         if low_power_head and (not current_power_skip or output_wind):
             raise ValueError("low_power_head requires current_power_skip and no wind head")
         self.hidden = hidden
@@ -44,9 +47,10 @@ class AGCRNLiteNetwork(nn.Module):
         self.current_power_skip = current_power_skip
         self.power_fallback = power_fallback
         self.low_power_head = low_power_head
+        self.input_size = input_size
         self.node_left = nn.Parameter(torch.randn(n_turbines, emb) * 0.1)
         self.node_right = nn.Parameter(torch.randn(emb, n_turbines) * 0.1)
-        self.cells = nn.ModuleList([GraphCell(4 if i == 0 else hidden, hidden)
+        self.cells = nn.ModuleList([GraphCell(input_size if i == 0 else hidden, hidden)
                                     for i in range(layers)])
         self.decoder = GraphCell(1, hidden)
         self.readout = nn.Linear(hidden, 1)
@@ -64,6 +68,8 @@ class AGCRNLiteNetwork(nn.Module):
         return torch.softmax(torch.relu(self.node_left @ self.node_right), dim=-1)
 
     def forward(self, x, return_aux: bool = False):
+        if x.ndim != 4 or x.shape[2] != self.input_size:
+            raise ValueError("History feature dimension differs from network input_size")
         if return_aux and not self.low_power_head:
             raise ValueError("Auxiliary state outputs require low_power_head")
         if self.low_power_head:
