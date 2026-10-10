@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
@@ -60,13 +61,18 @@ class NeuralForecaster(BaseForecaster):
         return self._power_loss_sums(self.network(histories), target, mask)
 
     def _power_loss_sums(self, prediction, target, mask):
-        error = prediction[mask] - target[mask]
+        selected = mask > 0 if mask.is_floating_point() else mask
+        error = prediction[selected] - target[selected]
         pointwise = error.abs() if self.loss_name == "mae" else error.square()
+        mae = error.detach().abs()
+        if mask.is_floating_point():
+            pointwise = pointwise * mask[selected]
+            mae = mae * mask[selected]
         value = pointwise.sum()
         j = self.features.index("Patv")
         span = max(self.scaler.maximum[j] - self.scaler.minimum[j], 1e-6)
         return {self.loss_name: value, "total": value,
-                "MAE_kW": error.detach().abs().sum() * float(span)}
+                "MAE_kW": mae.sum() * float(span)}
 
     def _training_log_lines(self):
         return []
@@ -94,7 +100,7 @@ class NeuralForecaster(BaseForecaster):
                 x = cube[take[:, None] + past[None, :]].transpose(0, 2, 3, 1)
                 y = target[take[:, None] + future[None, :]].transpose(0, 2, 1)
                 m = valid_target[take[:, None] + future[None, :]].transpose(0, 2, 1)
-                m &= np.isfinite(y)
+                m = np.where(np.isfinite(y), m, 0) if m.dtype != bool else m & np.isfinite(y)
                 yield self._network_histories(x), np.nan_to_num(y), m
         else:
             n = cube.shape[1]
@@ -108,7 +114,7 @@ class NeuralForecaster(BaseForecaster):
                 x = cube[take[:, None] + past[None, :], turbines[:, None]].transpose(0, 2, 1)
                 y = target[take[:, None] + future[None, :], turbines[:, None]]
                 m = valid_target[take[:, None] + future[None, :], turbines[:, None]]
-                m &= np.isfinite(y)
+                m = np.where(np.isfinite(y), m, 0) if m.dtype != bool else m & np.isfinite(y)
                 yield np.nan_to_num(x), np.nan_to_num(y), m
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
@@ -121,9 +127,12 @@ class NeuralForecaster(BaseForecaster):
         self.torch = torch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         _, train_tids, train_cube, train_mask, train_target, _ = training_cube(
-            train, self.features, self.config, self.scaler)
+            train, self.features, self.config, self.scaler, weighted=(self.name == "agcrn_lite" and
+                (self.config.validation_mask is not None or self.config.m2_extra_target_weight != 1)))
+        validation_config = replace(self.config, target_mask=self.config.early_stop_mask,
+                                    m2_extra_target_weight=1.0)
         _, valid_tids, valid_cube, valid_mask, valid_target, _ = training_cube(
-            valid, self.features, self.config, self.scaler)
+            valid, self.features, validation_config, self.scaler)
         if not np.array_equal(train_tids, valid_tids):
             raise ValueError("Training and validation turbine grids differ")
         self.turbine_ids = train_tids
@@ -148,6 +157,9 @@ class NeuralForecaster(BaseForecaster):
             lines.append("loss={} current_power_skip={} power_anchor=latest_finite_history "
                          "power_anchor_fallback=zero_kw".format(self.loss_name, self.current_power_skip))
         lines.extend(self._training_log_lines())
+        lines.append("training_mask={} validation_mask={} m2_extra_target_weight={} "
+                     "validation_weight=1".format(self.config.target_mask,
+                     self.config.early_stop_mask, self.config.m2_extra_target_weight))
         for epoch in range(1, self.epochs + 1):
             metrics = []
             split_metrics = []
@@ -165,14 +177,14 @@ class NeuralForecaster(BaseForecaster):
                     mt = torch.from_numpy(mask).to(self.device)
                     with torch.set_grad_enabled(training):
                         loss_sums = self._loss_sums(xt, yt, mt)
-                        loss = loss_sums["total"] / mt.sum().clamp(min=1)
+                        loss = loss_sums["total"] / mt.sum().clamp(min=1e-12 if mt.is_floating_point() else 1)
                         if training:
                             optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
                     for key, value in loss_sums.items():
                         sums[key] = sums.get(key, 0.0) + float(value.detach().cpu())
-                    n_valid += int(mt.sum().item())
+                    n_valid += float(mt.sum().item())
                 if n_valid == 0:
                     raise ValueError("No valid targets in {} split".format(
                         "training" if training else "validation"))
@@ -203,6 +215,7 @@ class NeuralForecaster(BaseForecaster):
         self.network.eval()
         self.validation_metrics = dict(best_metrics, best_epoch=best_epoch,
                                        stopped_epoch=epoch, early_stopping=self.loss_name,
+                                       validation_mask=self.config.early_stop_mask,
                                        power_loss_scale="training_minmax_normalized")
         lines.append("best_epoch={} best_valid_{}={:.8f} stopped_epoch={}".format(
             best_epoch, self.loss_name, best_loss, epoch))

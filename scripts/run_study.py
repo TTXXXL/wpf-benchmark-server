@@ -41,10 +41,16 @@ def load_plan(root, study):
             type(seed) is not int or not 0 <= seed < 2 ** 32 for seed in plan["seeds"]):
         raise ValueError("Study seeds must be distinct uint32 integers")
     recipe = suite.read_json(relative_file(root, plan["config"]))
+    from wpf_benchmark.evaluation.config import ProtocolConfig
     jobs = []
     for variant in plan["variants"]:
         if not re.fullmatch(NAME, variant["name"]) or variant["target_mask"] not in ("m1", "m2"):
             raise ValueError("Invalid study variant")
+        protocol = dict(recipe.get("protocol", {}), target_mask=variant["target_mask"], eval_mask="m1")
+        for option in ("validation_mask", "m2_extra_target_weight"):
+            if option in variant:
+                protocol[option] = variant[option]
+        effective = ProtocolConfig(**protocol)
         for seed in plan["seeds"]:
             key = "{}_s{}".format(variant["name"], seed)
             tag = "{}_{}".format(plan.get("tag_prefix", plan["experiment"]), key)
@@ -55,9 +61,13 @@ def load_plan(root, study):
                     "--seed", str(seed), "--repeat", "1", "--experiment", plan["experiment"],
                     "--tag", tag, "--validation-only", "--save-checkpoint",
                     "--no-save-arrays", "--no-plots"]
+            if effective.validation_mask is not None:
+                args.extend(["--validation-mask", effective.validation_mask])
+            if "m2_extra_target_weight" in variant:
+                args.extend(["--m2-extra-target-weight", str(effective.m2_extra_target_weight)])
             jobs.append(dict(key=key, tag=tag, seed=seed, model=plan["model"],
-                             target_mask=variant["target_mask"], args=args,
-                             model_config=recipe["model"], protocol=recipe.get("protocol", {})))
+                             target_mask=variant["target_mask"], validation_mask=effective.early_stop_mask,
+                             args=args, model_config=recipe["model"], protocol=protocol))
     if not jobs or len({job["key"] for job in jobs}) != len(jobs):
         raise ValueError("Study jobs must be nonempty and unique")
     return plan, jobs
@@ -107,7 +117,7 @@ def verify_result(root, job, identity):
     result = suite.read_json(path)
     expected = dict(model=job["model"], seed=job["seed"],
                     experiment=identity["plan"]["experiment"], table="validation",
-                    target_mask=job["target_mask"], validation_mask=job["target_mask"], eval_mask=None)
+                    target_mask=job["target_mask"], validation_mask=job["validation_mask"], eval_mask=None)
     expected.update(identity["digests"])
     if any(result.get(key) != value for key, value in expected.items()):
         raise RuntimeError("Result identity or frozen digests differ: " + job["key"])
@@ -152,12 +162,13 @@ def write_delivery(root, directory, jobs, identity):
             raise RuntimeError("Study is incomplete: " + job["key"])
         files.update(checked["hashes"])
         result = suite.read_json(root / checked["result"])
-        rows.append([job["key"], job["target_mask"], job["seed"],
+        rows.append([job["key"], job["target_mask"], job["validation_mask"],
+                     job["protocol"].get("m2_extra_target_weight", 1.0), job["seed"],
                      result["validation_metrics"]["MAE_kW"], result["run_id"], checked["result"]])
     summary = directory / "results.csv"
     with summary.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["job", "training_and_early_stop_mask", "seed",
+        writer.writerow(["job", "training_mask", "early_stop_mask", "m2_extra_target_weight", "seed",
                          "native_early_stop_MAE_kW", "run_id", "validation_json"])
         writer.writerows(rows)
     for path in [directory / "manifest.json", summary] + sorted(directory.glob("*.done.json")) + \
@@ -228,6 +239,7 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true", help="Print commands without writing or training")
     parser.add_argument("--collect-only", action="store_true", help="Verify and repackage; never train")
     args = parser.parse_args(argv)
+    sys.path.insert(0, str(ROOT / "src"))
     plan, jobs = load_plan(ROOT, args.study)
     print("Validation study: {} jobs; experiment={}".format(len(jobs), plan["experiment"]), flush=True)
     if args.dry_run:

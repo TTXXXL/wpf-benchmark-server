@@ -49,9 +49,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                      help="Sequential runs with seeds seed, seed+1, ...")
     run.add_argument("--experiment", default="standard")
     run.add_argument("--target-mask", choices=("m1", "m2"),
-                     help="Training and validation target definition (default: M1)")
+                     help="Training target definition; validation defaults to the same mask")
     run.add_argument("--eval-mask", choices=("m1", "m2"),
                      help="Main test scoring definition (default: M1)")
+    run.add_argument("--validation-mask", choices=("m1", "m2"),
+                     help="Unweighted early stopping mask for agcrn_lite (default: training mask)")
+    run.add_argument("--m2-extra-target-weight", type=float,
+                     help="Relative loss weight for M2-only training targets in agcrn_lite")
     run.add_argument("--validation-only", action="store_true",
                      help="Train and save validation metrics without loading test data")
     run.add_argument("--no-plots", action="store_true",
@@ -121,10 +125,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from .runner import eval_forecaster, seed_all
         settings = _load_experiment_config(args.config, paths)
         protocol = ProtocolConfig(**settings.get("protocol", {}))
-        if args.target_mask or args.eval_mask:
+        if (args.target_mask or args.eval_mask or args.validation_mask or
+                args.m2_extra_target_weight is not None):
             protocol = replace(protocol,
                                target_mask=args.target_mask or protocol.target_mask,
-                               eval_mask=args.eval_mask or protocol.eval_mask)
+                               eval_mask=args.eval_mask or protocol.eval_mask,
+                               validation_mask=args.validation_mask or protocol.validation_mask,
+                               m2_extra_target_weight=(protocol.m2_extra_target_weight if
+                                   args.m2_extra_target_weight is None else args.m2_extra_target_weight))
         if args.repeat <= 0:
             raise ValueError("--repeat must be positive")
         first_seed = int(settings.get("seed", 0) if args.seed is None else args.seed)

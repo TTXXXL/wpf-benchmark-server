@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "experiment": "m2_weighted_20261010_v1",
+  "tag_prefix": "weighted",
+  "model": "agcrn_lite",
+  "config": "configs/agcrn_lite_low_power_mae.json",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": [
+    {
+      "name": "C_M2_w100",
+      "target_mask": "m2",
+      "validation_mask": "m1",
+      "m2_extra_target_weight": 1.0
+    },
+    {
+      "name": "C_M2_w050",
+      "target_mask": "m2",
+      "validation_mask": "m1",
+      "m2_extra_target_weight": 0.5
+    },
+    {
+      "name": "C_M2_w025",
+      "target_mask": "m2",
+      "validation_mask": "m1",
+      "m2_extra_target_weight": 0.25
+    }
+  ],
+  "digests": {
+    "data_digest": "033fb4a7a9e0daf8",
+    "code_digest": "8f6bec799f7e0994"
+  },
+  "frozen_files": {
+    "data/processed/sdwpf_clean.parquet": "f39562038b8cffd654c4cf09c18d15aecd5b0c50c43958f95d27893f4dcd1c82",
+    "data/processed/sdwpf_meta.json": "0159403e88755daec5e060ff092304956d81b40a0166c71cf0cdaaa6b46a40a3"
+  },
+  "purpose": "Separate early stopping from M2 extra-target supervision; retain M1 accuracy while improving M2.",
+  "loss": "Common M1 targets weight 1, M2-only targets weight lambda, invalid targets weight 0. Both power and state BCE sums divided by total target weight. Validation uses unweighted M1 power MAE.",
+  "controls": "Reuse audited C_M1 seeds 0/1/2 from m2_core_20261010_v1. Compare w100 to old C_M2 to isolate early stopping; compare w050/w025 to w100 to isolate supervision weight. Architecture, seed, input, split, optimizer, state coefficient remain fixed.",
+  "analysis": "Return validation JSON, best weights and logs. Dense M1/M2/extra, calm, recovery and h1 are scored locally on the frozen validation grid only.",
+  "decision": {
+    "overall_mean_change_pct_max": {
+      "M1": 0,
+      "M2": -0.5,
+      "M2_extra": -3
+    },
+    "paired_seeds_min": {
+      "M1_nonworse": 2,
+      "M2_improved": 2,
+      "M2_extra_improved": 2
+    },
+    "M1_M2_recovery_and_h1_mean_change_pct_max": 1,
+    "M1_M2_recovery_and_h1_worst_seed_change_pct_max": 3,
+    "M1_low_stays_low_and_S1_mean_change_pct_max": 0,
+    "selection": "Only candidates passing every gate are eligible; lowest mean dense M2 MAE wins, then M1 MAE, then lower extra weight. Otherwise retain C_M1 and diagnose; do not evaluate test or add confirmation seeds automatically. Report unique-target and event weighting sensitivity for calm and extra samples."
+  }
+}

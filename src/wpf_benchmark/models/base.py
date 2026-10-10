@@ -29,6 +29,9 @@ class BaseForecaster:
     def configure(self, config: ProtocolConfig, scaler: FeatureScaler) -> None:
         if self.history_scale not in ("physical", "normalized"):
             raise ValueError("history_scale must be physical or normalized")
+        if self.name != "agcrn_lite" and (config.validation_mask is not None or
+                                         config.m2_extra_target_weight != 1):
+            raise ValueError("Separate validation masks and M2 target weighting currently require agcrn_lite")
         self.config = config
         self.scaler = scaler
 

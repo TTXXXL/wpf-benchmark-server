@@ -67,7 +67,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     if train.empty or valid.empty:
         raise ValueError("Configured training or validation split is empty")
     target_counts = {"train": int(target_valid(train, cfg.target_mask, cfg.exclude_flags_main).sum()),
-                     "validation": int(target_valid(valid, cfg.target_mask, cfg.exclude_flags_main).sum())}
+                     "validation": int(target_valid(valid, cfg.early_stop_mask, cfg.exclude_flags_main).sum())}
     meta = load_meta(paths)
     use_meta = meta.get("train_days") == cfg.train_days
     scaler = (FeatureScaler.from_meta(meta, features) if use_meta
@@ -94,8 +94,10 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
         checkpoint = {"path": checkpoint_path.relative_to(paths.root).as_posix(),
                       "sha256": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
                       "format_version": FORMAT_VERSION}
-    log_header = ("target_mask={} train_target_cells={} validation_target_cells={}\n".format(
-        cfg.target_mask, target_counts["train"], target_counts["validation"]))
+    log_header = ("target_mask={} validation_mask={} m2_extra_target_weight={} "
+                  "train_target_cells={} validation_target_cells={}\n".format(
+        cfg.target_mask, cfg.early_stop_mask, cfg.m2_extra_target_weight,
+        target_counts["train"], target_counts["validation"]))
     if checkpoint is not None:
         log_header += "checkpoint={} checkpoint_sha256={}\n".format(
             checkpoint["path"], checkpoint["sha256"])
@@ -117,7 +119,7 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
             raise ValueError("This model does not provide validation metrics")
         result = {"model": model.name, "table": "validation", "run_id": run_id,
                   "config": asdict(cfg), "model_config": model.model_config,
-                  "target_mask": cfg.target_mask, "validation_mask": cfg.target_mask,
+                  "target_mask": cfg.target_mask, "validation_mask": cfg.early_stop_mask,
                   "eval_mask": None,
                   "target_counts": target_counts,
                   "validation_metrics": model.validation_metrics,

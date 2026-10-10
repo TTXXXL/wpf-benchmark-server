@@ -10,16 +10,24 @@ from ..data.windows import to_feature_cube
 from ..data.masks import target_valid, target_values
 
 
-def training_cube(frame: pd.DataFrame, features: tuple, config, scaler):
+def training_cube(frame: pd.DataFrame, features: tuple, config, scaler, weighted=False):
     """Return normalized features and a main-table target mask on an aligned grid."""
     tids = np.sort(frame["TurbID"].unique())
     clean = frame.copy()
     good = target_valid(clean, config.target_mask, config.exclude_flags_main)
     clean["_valid_target"] = good.astype(np.float32)
+    use_weights = weighted and config.target_mask == "m2" and config.m2_extra_target_weight != 1
+    if weighted and config.target_mask == "m2":
+        common = target_valid(clean, "m1", config.exclude_flags_main)
+        if np.any(common & ~good) or not np.array_equal(
+                target_values(clean, "m1")[common], target_values(clean, "m2")[common]):
+            raise ValueError("Weighted M2 study requires M1 to be a subset of M2 with identical common targets")
+        if use_weights:
+            clean.loc[good & ~common, "_valid_target"] = config.m2_extra_target_weight
     clean["_target_power"] = target_values(clean, config.target_mask)
     times, grid = to_feature_cube(clean, features + ("_valid_target", "_target_power"), tids)
     data = grid[:, :, :-2]
-    valid = grid[:, :, -2] > 0.5
+    valid = np.nan_to_num(grid[:, :, -2], nan=0.0) if use_weights else grid[:, :, -2] > 0.5
     lo = scaler.minimum[None, None, :]
     span = np.maximum(scaler.maximum - scaler.minimum, 1e-6)[None, None, :]
     data = (data - lo) / span

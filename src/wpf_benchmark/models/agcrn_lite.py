@@ -72,9 +72,12 @@ class AGCRNLiteForecaster(NeuralForecaster):
 
         outputs = self.network(histories, return_aux=True)
         sums = self._power_loss_sums(outputs["power"], target, mask)
-        labels = (target[mask] < self._normalized_power(self.low_power_threshold_kw)).to(target.dtype)
-        state_loss = binary_cross_entropy_with_logits(outputs["state_logits"][mask], labels,
-                                                       reduction="sum")
+        selected = mask > 0 if mask.is_floating_point() else mask
+        labels = (target[selected] < self._normalized_power(self.low_power_threshold_kw)).to(target.dtype)
+        state_loss = binary_cross_entropy_with_logits(outputs["state_logits"][selected], labels,
+                         reduction="none" if mask.is_floating_point() else "sum")
+        if mask.is_floating_point():
+            state_loss = (state_loss * mask[selected]).sum()
         sums["state_bce"] = state_loss
         sums["total"] = sums[self.loss_name] + self.state_loss_weight * state_loss
         return sums

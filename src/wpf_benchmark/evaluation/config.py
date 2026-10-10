@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+from typing import Optional
 
 from ..data.masks import TARGET_MASKS
 
@@ -10,6 +12,8 @@ from ..data.masks import TARGET_MASKS
 class ProtocolConfig:
     target_mask: str = "m1"
     eval_mask: str = "m1"
+    validation_mask: Optional[str] = None
+    m2_extra_target_weight: float = 1.0
     input_window: int = 144
     horizon: int = 12
     train_days: int = 196
@@ -33,6 +37,13 @@ class ProtocolConfig:
     def __post_init__(self) -> None:
         if self.target_mask not in TARGET_MASKS or self.eval_mask not in TARGET_MASKS:
             raise ValueError("target_mask and eval_mask must be m1 or m2")
+        if self.validation_mask is not None and self.validation_mask not in TARGET_MASKS:
+            raise ValueError("validation_mask must be m1 or m2")
+        weight = self.m2_extra_target_weight
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or not 0 < weight <= 1:
+            raise ValueError("m2_extra_target_weight must lie in (0, 1]")
+        if weight != 1 and self.target_mask != "m2":
+            raise ValueError("m2_extra_target_weight requires target_mask=m2")
         if min(self.input_window, self.horizon, self.train_days, self.val_days,
                self.steps_per_day, self.stability_block_days, self.ramp_window_steps,
                self.curve_min_samples) <= 0:
@@ -44,3 +55,7 @@ class ProtocolConfig:
 
     def ramp_threshold_kw(self) -> float:
         return self.ramp_threshold_frac * self.rated_power_kw
+
+    @property
+    def early_stop_mask(self) -> str:
+        return self.validation_mask or self.target_mask

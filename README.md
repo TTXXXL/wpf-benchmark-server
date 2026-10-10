@@ -6,10 +6,10 @@
 
 ```bash
 git pull --ff-only
-python -u scripts/run_study.py --study m2_robustness
+python -u scripts/run_study.py --study m2_weighted
 ```
 
-完成后交回 `reports/studies/m2_core_20261010_v1/m2_core_20261010_v1_delivery.zip`，由本地统一分析。中断后执行同一命令可核验并续跑。数据与模型源码必须匹配计划冻结指纹，详见[实验训练](docs/实验训练.md)。
+完成后交回 `reports/studies/m2_weighted_20261010_v1/m2_weighted_20261010_v1_delivery.zip`，由本地统一分析。本轮九次训练固定 M1 早停，比较 M2 额外目标权重 1、0.5、0.25。中断后执行同一命令可核验并续跑。数据与模型源码必须匹配计划冻结指纹，详见[实验训练](docs/实验训练.md)。
 
 ## 文档
 
