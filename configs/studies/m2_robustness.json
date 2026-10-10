@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "experiment": "m2_core_20261010_v1",
+  "tag_prefix": "robust",
+  "model": "agcrn_lite",
+  "config": "configs/agcrn_lite_low_power_mae.json",
+  "seeds": [0, 1, 2],
+  "variants": [
+    {"name": "C_M1", "target_mask": "m1"},
+    {"name": "C_M2", "target_mask": "m2"}
+  ],
+  "digests": {
+    "data_digest": "033fb4a7a9e0daf8",
+    "code_digest": "27edc3b13b274e13"
+  },
+  "frozen_files": {
+    "data/processed/sdwpf_clean.parquet": "f39562038b8cffd654c4cf09c18d15aecd5b0c50c43958f95d27893f4dcd1c82",
+    "data/processed/sdwpf_meta.json": "0159403e88755daec5e060ff092304956d81b40a0166c71cf0cdaaa6b46a40a3"
+  },
+  "purpose": "Compare M1/M2 training and early stopping recipes; preserve M1 while improving M2.",
+  "analysis": "Return validation JSON, best weights and logs. Score dense M1/M2 and M2 extra samples locally.",
+  "decision": "Three paired seeds for screening; extend the selected comparison to five seeds after review."
+}
