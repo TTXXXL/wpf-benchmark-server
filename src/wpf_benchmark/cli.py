@@ -29,7 +29,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("eda", help="Inspect raw SDWPF data")
     commands.add_parser("calibrate-k", help="Calibrate spatial neighbor count")
-    commands.add_parser("preprocess", help="Produce cleaned Parquet data")
+    preprocessing = commands.add_parser("preprocess", help="Produce cleaned Parquet data")
+    preprocessing.add_argument("--train-days", type=int, default=196)
+    preprocessing.add_argument("--end-day", type=int)
+    preprocessing.add_argument("--raw-root", help="Read raw CSVs from another project; write only to --root")
     commands.add_parser("fit-power-curve", help="Fit training-only turbine power curves into metadata")
     wake = commands.add_parser("calibrate-wake", help="Calibrate wind direction on training days")
     wake.add_argument("--train-days", type=int, default=196)
@@ -97,7 +100,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_calibration(paths)
     elif args.command == "preprocess":
         from .preprocessing.sdwpf import main as run_preprocessing
-        run_preprocessing(paths)
+        run_preprocessing(paths, train_days=args.train_days, end_day=args.end_day,
+                          raw_paths=ProjectPaths.resolve(args.raw_root) if args.raw_root else None)
     elif args.command == "fit-power-curve":
         from .data.io import load_clean
         from .models.power_curve import fit_power_curves

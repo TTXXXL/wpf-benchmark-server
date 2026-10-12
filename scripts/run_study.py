@@ -255,6 +255,10 @@ def main(argv=None):
     parser.add_argument("--collect-only", action="store_true", help="Verify and repackage; never train")
     args = parser.parse_args(argv)
     sys.path.insert(0, str(ROOT / "src"))
+    descriptor = suite.read_json(relative_file(ROOT, "configs/studies/" + args.study + ".json"))
+    if descriptor.get("schema") == 2:
+        import rolling_study
+        return rolling_study.main(ROOT, args)
     plan, jobs = load_plan(ROOT, args.study)
     print("Validation study: {} jobs; experiment={}".format(len(jobs), plan["experiment"]), flush=True)
     if args.dry_run:

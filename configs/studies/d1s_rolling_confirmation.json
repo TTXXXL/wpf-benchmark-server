@@ -1,0 +1,55 @@
+{
+  "schema": 2,
+  "kind": "d1s_forward",
+  "experiment": "d1s_rolling_20261012",
+  "model": "agcrn_lite",
+  "config": "configs/agcrn_lite_low_power_mae.json",
+  "recipe_sha256": "a0ccb879204b08d1163aa6aee680853f21fa475bb640a0f17d819e6f76980f6d",
+  "seeds": [0, 1, 2, 3, 4],
+  "export_batch_size": 32,
+  "raw_sha256": {
+    "sdwpf_245days_v1.csv": "6cf7613a82c61bb5cf9fcbbf22e3f6c48165fa32021eb6f1905cb2b7af4d7667",
+    "sdwpf_baidukddcup2022_turb_location.csv": "cfaa329ea76f83dafab47f3483e08d05d7d14f76a7a8bb6122012691e444974b"
+  },
+  "folds": [
+    {"id": "F1", "train": [1, 122], "early_stop": [123, 136], "fit": [137, 143], "calibration": [144, 149], "outer": [150, 161]},
+    {"id": "F2", "train": [1, 138], "early_stop": [139, 152], "fit": [153, 159], "calibration": [160, 165], "outer": [166, 177]},
+    {"id": "F3", "train": [1, 154], "early_stop": [155, 168], "fit": [169, 175], "calibration": [176, 181], "outer": [182, 193]}
+  ],
+  "policy": {
+    "variants": ["D1s", "D0"],
+    "rule": "R1",
+    "strength": 1,
+    "q": 0.25,
+    "support": "E1_common_history",
+    "primary": "member_mean_error",
+    "shadow": "fixed_equal_mean_prediction",
+    "threshold": "full_M1_low_anchor_N; Python_round; available_probability_stable_sort; nextafter_plus_inf; p_lt_tau; retain_ties",
+    "outer_threshold_update": false,
+    "calibration_recovery_limit_pct": 0.5,
+    "recovery_limit_pct": 1.0,
+    "low_anchor_h1_limit_pct": 1.0,
+    "overall_limit_pct": 0.5,
+    "pooled_m1_gain_min_pct": 2.0,
+    "positive_folds_min": 2,
+    "positive_members_min": 4,
+    "unique_event_gain_min_exclusive_pct": 0.0,
+    "increment_min_pp": 2.0,
+    "bootstrap_replicates": 2000,
+    "bootstrap_seed": 20261012,
+    "bootstrap_scope": "fixed_models_and_policy; within_fold_target_day_composition",
+    "macro_fold": "arithmetic_mean_of_three_fold_relative_gains; sensitivity_only",
+    "event_key": "fold_id,turbine_id,causal_episode_start; no_cross_fold_merge",
+    "technical_invalid_is_success": false,
+    "calibration_rejected_is_active_success": false,
+    "shadow_deployment_requires": "primary_pass AND shadow_own_gain_direction_units_and_protection AND shadow_calibration_recovery_limit; no_member_vote_for_shadow"
+  },
+  "result_template": {
+    "populations": ["m1", "m2"],
+    "outputs": ["member_mean_error", "fixed_equal_mean_prediction"],
+    "groups": ["low_anchor", "persistent_low_power", "recovery", "low_anchor_h1", "overall", "overall_h1"],
+    "units": ["cell", "unique_target", "fold_episode"],
+    "diagnostics": ["MAE", "ME", "overprediction_fraction", "common_support_increment", "potential_feature_coverage", "mutually_exclusive_fallbacks", "daily_recovery", "pooled", "macro_fold"],
+    "states": ["active", "calibration_rejected", "valid_no_outer_action", "technical_invalid"]
+  }
+}

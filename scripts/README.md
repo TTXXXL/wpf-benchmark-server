@@ -5,6 +5,7 @@
 | 文件 | 用途 |
 |---|---|
 | [run_study.py](run_study.py) | 当前验证实验的通用入口；读取集中计划，核验续跑，自动生成回传 ZIP |
+| [rolling_study.py](rolling_study.py) | run_study 的 schema2 内部模块；按折隔离清洗/训练，导出完整阶段内密集预测，不选择策略或评分外层 |
 | [rerun_low_power_review.py](rerun_low_power_review.py) | 已有八组×五种子，复用冻结处理数据，按需重跑与续跑 |
 | [rerun_graph_ablation.py](rerun_graph_ablation.py)、[rerun_graph_ablation.sh](rerun_graph_ablation.sh) | AGCRN/Lite、损失和当前功率开关的匹配消融套件 |
 | [rerun_m1.py](rerun_m1.py)、[rerun_m1.sh](rerun_m1.sh) | 旧13模型41次M1套件及批跑公共执行工具 |

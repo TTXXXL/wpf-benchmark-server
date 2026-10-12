@@ -48,8 +48,10 @@ RNG = np.random.default_rng(0)
 
 # ─────────────────────────── 数据载入与宽表 ───────────────────────────
 
-def load(paths: ProjectPaths) -> tuple:
+def load(paths: ProjectPaths, end_day=None) -> tuple:
     df = pd.read_csv(paths.raw / "sdwpf_245days_v1.csv")
+    if end_day is not None:
+        df = df.loc[df["Day"] <= end_day].copy()
     df["ts"] = pd.to_timedelta(df["Day"] - 1, unit="D") + pd.to_timedelta(df["Tmstamp"] + ":00")
     df["TurbID"] = df["TurbID"].astype(int)
     loc = pd.read_csv(paths.raw / "sdwpf_baidukddcup2022_turb_location.csv", encoding="utf-8-sig").set_index("TurbID")
@@ -148,21 +150,27 @@ def curve_interp(v: np.ndarray, centers: np.ndarray, curve: np.ndarray) -> np.nd
 
 
 def residual_flags(Wspd: np.ndarray, Patv: np.ndarray, resid: np.ndarray,
-                   f_fault: np.ndarray, train_rows: np.ndarray
+                   f_fault: np.ndarray, train_rows: np.ndarray, return_parameters=False
                    ) -> tuple[np.ndarray, np.ndarray]:
     """Fit residual scales on training rows and classify every row with them."""
     m_curtail = np.zeros_like(f_fault)
     m_outlier = np.zeros_like(f_fault)
     edges = np.arange(0.0, 26.01, 1.0)
+    global_sigma = np.full(Wspd.shape[1], np.nan)
+    bin_sigma = np.full((Wspd.shape[1], len(edges) - 1), np.nan)
+    fit_counts = np.zeros(Wspd.shape[1], dtype=np.int64)
     for j in range(Wspd.shape[1]):
         v, r = Wspd[:, j], resid[:, j]
         ok = np.isfinite(v) & np.isfinite(r) & (Patv[:, j] > 0) & ~f_fault[:, j]
         train_ok = ok & train_rows
         train_resid = r[train_ok]
+        fit_counts[j] = train_resid.size
         if train_resid.size == 0:
             continue
         mad_all = max(float(np.median(np.abs(train_resid - np.median(train_resid))) *
                             1.4826), 5.0)
+        global_sigma[j] = mad_all
+        bin_sigma[j] = mad_all
         sigma = np.full(len(v), mad_all)
         for b in range(len(edges) - 1):
             in_bin = (v >= edges[b]) & (v < edges[b + 1])
@@ -171,20 +179,31 @@ def residual_flags(Wspd: np.ndarray, Patv: np.ndarray, resid: np.ndarray,
                 rb = r[training_bin]
                 sig = np.median(np.abs(rb - np.median(rb))) * 1.4826
                 sigma[in_bin] = max(sig, 5.0)
+                bin_sigma[j, b] = max(sig, 5.0)
         z = r / np.where(sigma > 0, sigma, np.nan)
         cand = ok & np.isfinite(z)
         m_curtail[:, j] = cand & (z <= -SIGMA) & (v >= CURT_WSPD)
         m_outlier[:, j] = cand & (np.abs(z) > SIGMA) & (v >= 3.0) & ~m_curtail[:, j]
+    if return_parameters:
+        return m_curtail, m_outlier, dict(residual_edges=edges,
+            residual_global_sigma=global_sigma, residual_bin_sigma=bin_sigma,
+            residual_fit_counts=fit_counts)
     return m_curtail, m_outlier
 
 
 # ─────────────────────────── 主流程 ───────────────────────────
 
-def main(paths: ProjectPaths = None) -> None:
+def main(paths: ProjectPaths = None, train_days=TRAIN_DAYS, end_day=None,
+         raw_paths=None) -> None:
     paths = paths or ProjectPaths.resolve()
+    if type(train_days) is not int or train_days < 1 or (
+            end_day is not None and (type(end_day) is not int or end_day <= train_days)):
+        raise ValueError("Invalid training cutoff or preprocessing end day")
     paths.processed.mkdir(parents=True, exist_ok=True)
     paths.figures.mkdir(parents=True, exist_ok=True)
-    df, loc, wide, ts_index, tids = load(paths)
+    source_paths = raw_paths or paths
+    df, loc, wide, ts_index, tids = (load(source_paths) if end_day is None
+                                   else load(source_paths, end_day=end_day))
     T, N = wide["Wspd"].shape
     # Capture the paper's rules before wrapping directions or imputing sensors.
     o_pitch = ((wide["Pab1"] > 89) | (wide["Pab2"] > 89) |
@@ -194,7 +213,7 @@ def main(paths: ProjectPaths = None) -> None:
     o_bad = o_pitch | o_zero_windy | o_dir_abnormal
     raw_valid = np.isfinite(wide["Patv"]) & np.isfinite(wide["Wspd"])
     patv_obs = np.maximum(wide["Patv"], 0).astype(np.float32)
-    train_rows = np.asarray(ts_index < pd.Timedelta(days=TRAIN_DAYS))
+    train_rows = np.asarray(ts_index < pd.Timedelta(days=train_days))
     if not train_rows.any() or train_rows.all():
         raise ValueError("Training boundary must leave both training and future rows")
     xy = loc[["x", "y"]].to_numpy()
@@ -253,14 +272,14 @@ def main(paths: ProjectPaths = None) -> None:
         r = wide["Patv"][ok, j] - pc
         resid[np.where(ok)[0], j] = r
     # 分风速箱稳健 σ 仅从训练段估计，随后固定阈值应用到未来段。
-    m_curtail, m_outlier = residual_flags(
-        wide["Wspd"], wide["Patv"], resid, f_fault, train_rows)
+    m_curtail, m_outlier, fitted_residual = residual_flags(
+        wide["Wspd"], wide["Patv"], resid, f_fault, train_rows, return_parameters=True)
     # 离群 Patv 置缺失并重补
     n_out_patv = int(m_outlier.sum())
     wide["Patv"][m_outlier] = np.nan
     wide["Patv"], imp2 = impute(wide["Patv"], D)
     L.append("## P2 功率曲线残差异常\n")
-    L.append(f"- 功率曲线与逐机×分箱稳健 σ 仅由前 {TRAIN_DAYS} 天拟合，再应用到全段")
+    L.append(f"- 功率曲线与逐机×分箱稳健 σ 仅由前 {train_days} 天拟合，再应用到全段")
     L.append(f"- 残差 |z|>{SIGMA} → 离群：{n_out_patv:,} 行，Patv 已置缺失并重补")
     L.append(f"- 残差 z≤−{SIGMA} 且 Wspd≥{CURT_WSPD} → 限电/降额 flag（f_curtail）：{int(m_curtail.sum()):,} 行\n")
 
@@ -330,15 +349,24 @@ def main(paths: ProjectPaths = None) -> None:
     out.to_parquet(parquet_path, index=False)
 
     # train 段 min/max（供训练脚本归一化，防泄漏）
-    train_end = pd.Timedelta(days=TRAIN_DAYS)
+    train_end = pd.Timedelta(days=train_days)
     tr = out[out["ts"] < train_end]
     meta = {
-        "train_days": TRAIN_DAYS,
+        "train_days": train_days,
         "knn_k": KNN_K,
         "short_gap": SHORT_GAP,
         "scale": {c: {"min": float(tr[c].min()), "max": float(tr[c].max())}
                   for c in FEATURES + ["Wsin", "Wcos"]},
     }
+    np.savez_compressed(paths.processed / "sdwpf_preprocessing_fit.npz",
+                        curve_centers=centers, curves=curves,
+                        turbine_ids=np.asarray(tids), **fitted_residual)
+    meta["preprocessing_fit"] = {
+        "path": "sdwpf_preprocessing_fit.npz", "fit_day_range": [1, train_days],
+        "applied_end_day": int(day.max()), "objects": ["cleaning_power_curve",
+            "global_and_bin_residual_sigma", "feature_min_max"],
+        "causal_imputation": "past_ffill_3_then_same_time_spatial_knn_12",
+        "retrospective_labels_only": ["f_stuck", "f_farm"]}
     (paths.processed / "sdwpf_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ── 验证：功率曲线紧致度（清洗前后）+ 图 ──
