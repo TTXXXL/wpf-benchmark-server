@@ -20,10 +20,21 @@ class AGCRNLiteForecaster(NeuralForecaster):
                  loss: str = "mse", current_power_skip: bool = False,
                  low_power_head: bool = False, low_power_threshold_kw: float = 10.0,
                  state_loss_weight: float = 0.05, state_history_steps: int = 12,
-                 input_features: Optional[Sequence[str]] = None):
+                 input_features: Optional[Sequence[str]] = None,
+                 selection_mode: str = "native",
+                 selection_days: Optional[Sequence[int]] = None):
         super().__init__(hidden, layers, dropout, lr, batch, epochs, patience,
                          stride, weight_decay)
         self.emb = int(emb)
+        if selection_mode not in ("native", "fixed_budget_dual_mask"):
+            raise ValueError("Unknown Lite selection_mode")
+        self.selection_mode = selection_mode
+        self.selection_days = list(selection_days) if selection_days is not None else [197, 208]
+        if (len(self.selection_days) != 2 or any(type(day) is not int for day in self.selection_days) or
+                self.selection_days[0] > self.selection_days[1]):
+            raise ValueError("selection_days must be an ordered pair of integer days")
+        if selection_mode == "native" and selection_days is not None:
+            raise ValueError("selection_days requires fixed_budget_dual_mask")
         self.temporal_stride = int(temporal_stride)
         self.loss_name = str(loss)
         if self.loss_name not in ("mae", "mse"):
@@ -75,10 +86,21 @@ class AGCRNLiteForecaster(NeuralForecaster):
         # Keep the legacy default recipe and checkpoint payload unchanged.
         if self.input_features is not None:
             options["input_features"] = list(self.input_features)
+        if self.selection_mode != "native":
+            options["selection_mode"] = self.selection_mode
+            options["selection_days"] = list(self.selection_days)
         return options
 
     def configure(self, config, scaler):
         super().configure(config, scaler)
+        if self.selection_mode == "fixed_budget_dual_mask" and (
+                config.validation_mask is not None or config.m2_extra_target_weight != 1 or
+                self.loss_name != "mae"):
+            raise ValueError("Fixed dual selection requires MAE, unit weights and no validation_mask")
+        if self.selection_mode == "fixed_budget_dual_mask" and not (
+                config.train_days < self.selection_days[0] <= self.selection_days[1] <=
+                config.train_days + config.val_days):
+            raise ValueError("Selection days must lie within the development period")
         if self.low_power_head and not self.low_power_threshold_kw < config.rated_power_kw:
             raise ValueError("low_power_threshold_kw must be below rated_power_kw")
 

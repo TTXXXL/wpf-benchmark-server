@@ -26,6 +26,16 @@ def save_checkpoint(model, path, metadata=None) -> Path:
     """
     if not hasattr(model, "network") or model.validation_metrics is None:
         raise ValueError("Fit the neural forecaster before saving a checkpoint")
+    return save_epoch_checkpoint(model, path, model.network.state_dict(),
+                                 model.validation_metrics, metadata)
+
+
+def save_epoch_checkpoint(model, path, state_dict, validation_metrics, metadata=None) -> Path:
+    """Save an explicit completed epoch without requiring a fitted best state.
+
+    File SHA256 belongs in the external manifest (a file cannot contain its own
+    SHA256). The inference format remains v1 and contains no optimizer/RNG.
+    """
     torch = model.torch
     description = json.loads(json.dumps({
         "format_version": FORMAT_VERSION,
@@ -38,13 +48,13 @@ def save_checkpoint(model, path, metadata=None) -> Path:
                    "minimum": model.scaler.minimum.tolist(),
                    "maximum": model.scaler.maximum.tolist()},
         "turbine_ids": model.turbine_ids.tolist(),
-        "validation_metrics": model.validation_metrics,
+        "validation_metrics": validation_metrics,
         "metadata": metadata or {},
         "torch_version": str(torch.__version__),
     }, allow_nan=False))
     description["state_dict"] = {
         key: value.detach().cpu().clone()
-        for key, value in model.network.state_dict().items()}
+        for key, value in state_dict.items()}
     description["extra_state"] = model._checkpoint_extra_state()
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

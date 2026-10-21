@@ -57,6 +57,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                      help="Main test scoring definition (default: M1)")
     run.add_argument("--validation-mask", choices=("m1", "m2"),
                      help="Unweighted early stopping mask for agcrn_lite (default: training mask)")
+    run.add_argument("--selection-mode", choices=("native", "fixed_budget_dual_mask"),
+                     help="Lite only: native early stopping or a full trajectory with offline dual selection")
     run.add_argument("--m2-extra-target-weight", type=float,
                      help="Relative loss weight for M2-only training targets in agcrn_lite")
     run.add_argument("--validation-only", action="store_true",
@@ -140,6 +142,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.repeat <= 0:
             raise ValueError("--repeat must be positive")
         first_seed = int(settings.get("seed", 0) if args.seed is None else args.seed)
+        if args.selection_mode:
+            if args.model != "agcrn_lite":
+                raise ValueError("--selection-mode requires agcrn_lite")
+            settings.setdefault("model", {})["selection_mode"] = args.selection_mode
         for seed in range(first_seed, first_seed + args.repeat):
             seed_all(seed)
             model = get_model(args.model)(**settings.get("model", {}))
@@ -148,6 +154,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                       seed, args.experiment, args.validation_only,
                                       save_checkpoint=args.save_checkpoint)
             for table, result in results.items():
+                if table == "trajectory":
+                    print("seed {} trajectory complete -> {}".format(seed, result["result_path"]))
+                    continue
                 mae = (result["validation_metrics"]["MAE_kW"] if
                        table == "validation" else result["A_turbine"]["MAE_kW"])
                 print("seed {} {}: MAE {:.2f} kW -> {}".format(
@@ -156,7 +165,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             checkpoint = next(iter(results.values())).get("checkpoint")
             if checkpoint is not None:
                 print("Best checkpoint: {}".format(paths.root / checkpoint["path"]))
-        if not args.no_plots:
+        if not args.no_plots and getattr(model, "selection_mode", "native") != "fixed_budget_dual_mask":
             from .figures import generate
             generate(paths, paths.figures / "paper")
     elif args.command == "rescore":

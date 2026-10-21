@@ -1,0 +1,69 @@
+{
+  "schema": 3,
+  "experiment": "supervision_selection_20261021_v1",
+  "model": "agcrn_lite",
+  "config": "configs/agcrn_lite_factorial_m1.json",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "variants": [
+    {
+      "name": "m1",
+      "target_mask": "m1",
+      "config": "configs/agcrn_lite_factorial_m1.json"
+    },
+    {
+      "name": "m2",
+      "target_mask": "m2",
+      "config": "configs/agcrn_lite_factorial_m2.json"
+    }
+  ],
+  "selection_days": [
+    197,
+    208
+  ],
+  "scoring_days": [
+    209,
+    221
+  ],
+  "digests": {
+    "data_digest": "033fb4a7a9e0daf8",
+    "code_digest": "190f95daee71e485"
+  },
+  "frozen_files": {
+    "data/processed/sdwpf_clean.parquet": "f39562038b8cffd654c4cf09c18d15aecd5b0c50c43958f95d27893f4dcd1c82",
+    "data/processed/sdwpf_meta.json": "0159403e88755daec5e060ff092304956d81b40a0166c71cf0cdaaa6b46a40a3"
+  },
+  "validation_grid_digest": "d3223fc7656bd3cb62a4e3dd52bf9da6a25b520e90ecae71dc53fffe8c3662fe",
+  "reference_grid": "stage3_state_weight_20261009/validation_grid.npz; core arrays only",
+  "support_sha256": {
+    "scripts/factorial_study.py": "aca7f11078f887a42ff5761808ddbdbaeae70bb28b0d561f44bd074654759485",
+    "scripts/run_study.py": "bc866b9a2e89d96610c957f38e3ebf9ac0dbdd6b808eed739210232d112a8575",
+    "scripts/rerun_m1.py": "6b49d086ae1c785788dfc26c1b41510a72d76d01501edba10bee50d6e75d12b9",
+    ".gitattributes": "bfb75fc70762b0300970b522e0db4ccf9b474abdb8e1c78e01289af4966c4f87",
+    "pyproject.toml": "795949850432bdb329d5efcfe2076a31840ae057b422fa5b4e5c749e8f6a2cd0",
+    "scripts/README.md": "45e8af819ab257cf2aa25a6af61b21646ec0d8e998803a92bddcfec26ee17f85",
+    "docs/\u5b9e\u9a8c\u8bad\u7ec3.md": "b02c8edcc9b9df92182ad5a0b253a1ae82dd7826b10e18eedbc2b22d4016d94d",
+    "docs/\u6a21\u578b\u6743\u91cd\u4fdd\u5b58\u4e0e\u52a0\u8f7d.md": "2cee1114aa5c672b68203fcbc7018f2a819de0595572133e948a3aa43686469f"
+  },
+  "recipe_sha256": {
+    "configs/agcrn_lite_factorial_m1.json": "cdb883e232bb76bb313abec745af52246966a0af3038c9f554a0c5ba4db15c13",
+    "configs/agcrn_lite_factorial_m2.json": "61cffec2d1b26cdba4ae98e83068780fe433dafa3bcd4ffde1e866eaa72e96a2"
+  },
+  "purpose": "Development mechanism factorial: training population includes MAE and auxiliary BCE; no deployment gate",
+  "scoring": "target-day split; dense equal-horizon MAE; global-min tolerance 1e-8 kW; earliest epoch",
+  "uncertainty": {
+    "method": "paired circular target-day moving blocks",
+    "block_days": 7,
+    "replicates": 4000,
+    "seed": 20261010,
+    "seed_resampling": false
+  },
+  "analysis_script_sha256": "46389cbca2d05228094edf9dfab84d83fd81d8fe33b94f5bb8d0505372a6b742",
+  "reference_grid_sha256": "507687484e0511691d091619c7b2c9fb55e14976ab8f2dbfb981bade68b85571",
+  "grid_membership": "Original Day197 issue start through last complete 12-step forecast; split by each target Day label",
+  "issue_power": "Frozen raw cleaned issue Patv for finite-support gate; separate bounded latest-finite persistence",
+  "selector_script_sha256": "8ea6b361c38c9aefda22682140a563d060b87d1c2818a6bb65a6a5eb328a060f"
+}

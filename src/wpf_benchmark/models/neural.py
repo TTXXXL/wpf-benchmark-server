@@ -118,6 +118,9 @@ class NeuralForecaster(BaseForecaster):
                 yield np.nan_to_num(x), np.nan_to_num(y), m
 
     def fit(self, train: pd.DataFrame, valid: Optional[pd.DataFrame] = None) -> None:
+        if getattr(self, "selection_mode", "native") == "fixed_budget_dual_mask":
+            from .fixed_budget import fit_trajectory
+            return fit_trajectory(self, train, valid)
         if valid is None or valid.empty:
             raise ValueError("Deep baselines require validation data for early stopping")
         try:

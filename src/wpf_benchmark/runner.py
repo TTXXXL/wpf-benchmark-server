@@ -49,6 +49,10 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
     """Evaluate a registered model on both tables using one prediction cube."""
     cfg = cfg or ProtocolConfig()
     paths = paths or ProjectPaths.resolve()
+    if getattr(model, "selection_mode", "native") == "fixed_budget_dual_mask":
+        if not validation_only or not save_checkpoint:
+            raise ValueError("Fixed budget trajectories require validation-only and checkpoint output")
+        return _fit_fixed_trajectory(model, cfg, tag, paths, seed, experiment, save_arrays)
     from .figures.io import append_index, config_digest, result_provenance
     data_digest, code_digest = result_provenance(paths)
     seed_all(seed)
@@ -253,3 +257,66 @@ def eval_forecaster(model: BaseForecaster, cfg: Optional[ProtocolConfig] = None,
                      data_digest, code_digest)
         results[table] = result
     return results
+
+
+def _fit_fixed_trajectory(model, cfg, tag, paths, seed, experiment, save_arrays):
+    """Dedicated development-only runner; no test data or singular best state."""
+    import subprocess
+    from .figures.io import config_digest, result_provenance
+    from .evaluation.selection import audit_targets, build_grid, grid_digest, write_json
+
+    data_digest, code_digest = result_provenance(paths)
+    seed_all(seed)
+    columns = list(dict.fromkeys(("ts", "Day", "TurbID", "Patv") + tuple(model.features) +
+                                 FLAG_COLUMNS + OFFICIAL_COLUMNS))
+    train = load_clean(paths, columns=columns, filters=[("Day", "<=", cfg.train_days)])
+    valid = load_clean(paths, columns=columns, filters=[("Day", ">", cfg.train_days),
+                                  ("Day", "<=", cfg.train_days + cfg.val_days)])
+    counts = dict(train=audit_targets(train, cfg), validation=audit_targets(valid, cfg))
+    meta = load_meta(paths)
+    use_meta = meta.get("train_days") == cfg.train_days
+    scaler = (FeatureScaler.from_meta(meta, model.features) if use_meta else
+              FeatureScaler.from_training(train, model.features))
+    model.configure(cfg, scaler)
+    model.paths = paths
+    times = np.sort(train.ts.unique())
+    prefix = train[train.ts.isin(times[-(cfg.input_window - 1):])] if cfg.input_window > 1 else train.iloc[:0]
+    grid, cube, issues = build_grid(pd.concat([prefix, valid], ignore_index=True), cfg, model.features)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    run_id = "{}_{}".format(tag or model.name, stamp)
+    directory = paths.reports / "trajectories" / experiment / cfg.target_mask / ("seed{}".format(seed)) / run_id
+    def git_output(*args):
+        result = subprocess.run(["git"] + list(args), cwd=str(paths.root),
+                                capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return result.stdout.strip() if result.returncode == 0 else None
+    metadata = dict(run_id=run_id, trajectory_id=run_id, attempt_id=run_id, experiment=experiment,
+                    seed=seed, data_digest=data_digest, code_digest=code_digest,
+                    config_digest=config_digest(cfg, model.model_config),
+                    git_head=git_output("rev-parse", "HEAD"), git_status=git_output("status", "--porcelain"),
+                    scaler_source="sdwpf_meta.json" if use_meta else "configured_training_days",
+                    torch_deterministic_cudnn=True, torch_cudnn_benchmark=False)
+    model.trajectory_context = dict(directory=directory, metadata=metadata, grid=grid,
+                                    cube=cube, issues=issues, selection_days=model.selection_days)
+    model.log_path = paths.reports / "train" / (run_id + ".log")
+    model.fit(train, valid)
+    # Save grid once per trajectory: no dependence on an external Parquet's row order.
+    np.savez_compressed(directory / "validation_grid.npz", **grid)
+    np.savez_compressed(directory / "inference_inputs.npz", history=cube, issues=issues,
+                        times=np.sort(pd.concat([prefix, valid]).ts.unique()).astype("timedelta64[ns]").astype(np.int64),
+                        turbine_ids=grid["turbine_ids"], features=np.asarray(model.features))
+    result = dict(model=model.name, table="trajectory", run_id=run_id, seed=seed,
+                  experiment=experiment, target_mask=cfg.target_mask, config=asdict(cfg),
+                  model_config=model.model_config, data_digest=data_digest, code_digest=code_digest,
+                  target_counts=counts, validation_grid_digest=grid_digest(grid),
+                  grid_sha256=hashlib.sha256((directory / "validation_grid.npz").read_bytes()).hexdigest(),
+                  inputs_sha256=hashlib.sha256((directory / "inference_inputs.npz").read_bytes()).hexdigest(),
+                  trajectory=directory.relative_to(paths.root).as_posix(),
+                  trajectory_manifest_sha256=hashlib.sha256((directory / "trajectory.json").read_bytes()).hexdigest(),
+                  log_path=model.log_path.relative_to(paths.root).as_posix(),
+                  log_sha256=hashlib.sha256(model.log_path.read_bytes()).hexdigest(),
+                  selection_mode="fixed_budget_dual_mask", test_data_loaded=False,
+                  save_arrays="Only frozen development grid is exported; selected forecasts are scored offline",
+                  save_arrays_requested=save_arrays, checkpoint=None)
+    result["result_path"] = str(directory / "result.json")
+    write_json(directory / "result.json", result)
+    return {"trajectory": result}

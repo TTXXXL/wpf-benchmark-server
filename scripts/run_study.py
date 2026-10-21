@@ -253,9 +253,15 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true", help="Print commands without writing or training")
     parser.add_argument("--preflight", action="store_true", help="Verify data/code/recipes/environment without training or writing")
     parser.add_argument("--collect-only", action="store_true", help="Verify and repackage; never train")
+    parser.add_argument("--retry-job", help="Schema 3 only: explicitly restart one inspected failed job as a new attempt")
     args = parser.parse_args(argv)
     sys.path.insert(0, str(ROOT / "src"))
     descriptor = suite.read_json(relative_file(ROOT, "configs/studies/" + args.study + ".json"))
+    if descriptor.get("schema") == 3:
+        import factorial_study
+        return factorial_study.main(ROOT, args)
+    if args.retry_job:
+        raise ValueError("--retry-job requires a schema-3 factorial plan")
     if descriptor.get("schema") == 2:
         import rolling_study
         return rolling_study.main(ROOT, args)
